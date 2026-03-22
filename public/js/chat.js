@@ -1461,29 +1461,20 @@ const ChatApp = (() => {
     }
   }
 
-  async function viewDocumentSnapshot(id, name) {
+  function viewDocumentSnapshot(id, name) {
     const modal = $('snapshot-modal');
     const title = $('snapshot-modal-title')?.firstElementChild;
     const content = $('snapshot-content');
     if (!modal || !title || !content) return;
 
     title.textContent = `Snapshot: ${name}`;
-    content.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px;">Generating snapshot...</div>';
+    content.innerHTML = `<div hx-ext="sse" sse-connect="/v1/documents/${id}/snapshot" sse-swap="chunk" sse-close="close" hx-swap="beforeend"></div>`;
+    
+    // Activate HTMX inside the content div
+    htmx.process(content);
+    
     modal.classList.add('open');
-
-    try {
-      const response = await fetch(`/v1/documents/${id}/snapshot`);
-      if (!response.ok) {
-        throw new Error(await response.text() || `HTTP ${response.status}`);
-      }
-      const data = await response.json();
-      content.innerHTML = renderMarkdown(data.snapshot);
-    } catch (err) {
-      console.error(err);
-      content.innerHTML = `<div style="color: #ef4444; padding: 20px;">Failed to load snapshot: ${err.message}</div>`;
-    }
   }
-
 
   return {
     init,

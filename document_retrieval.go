@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"log"
 	"net/http"
 	"regexp"
@@ -638,7 +639,7 @@ func getDocumentSnapshot(w http.ResponseWriter, r *http.Request) {
 	q := `
 		SELECT chunk_index, content
 		FROM rag_embeddings
-		WHERE document_id = $1 AND chunk_type = 'text'
+		WHERE document_id = $1 
 		ORDER BY chunk_index ASC
 	`
 	rows, err := ch.Query(context.Background(), q, uint32(docID))
@@ -667,40 +668,53 @@ func getDocumentSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var sb strings.Builder
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, `{"error":"Streaming not supported"}`, http.StatusInternalServerError)
+		return
+	}
+
+	re := regexp.MustCompile(`([.!?])\s+([A-Z])`)
 	var prevIndex uint32
 
 	for i, c := range chunks {
-		if i == 0 {
-			sb.WriteString(c.content)
-			prevIndex = c.index
-			continue
-		}
+		var textToAppend string
 
-		if c.index == prevIndex+1 {
-			// Sequential chunk: trim first 30 words (overlap)
-			words := strings.Fields(c.content)
-			if len(words) > 30 {
-				sb.WriteString(" " + strings.Join(words[30:], " "))
-			} else {
-				// If chunk has <= 30 words, just append space to be safe, though unusual
-				sb.WriteString(" ")
-			}
+		if i == 0 {
+			textToAppend = c.content
 		} else {
-			// Gap exists
-			sb.WriteString("\n\n[...]\n\n" + c.content)
+			if c.index == prevIndex+1 {
+				// Sequential chunk: trim first 30 words (overlap)
+				words := strings.Fields(c.content)
+				if len(words) > 30 {
+					textToAppend = " " + strings.Join(words[30:], " ")
+				} else {
+					// If chunk has <= 30 words, just append space to be safe, though unusual
+					textToAppend = " "
+				}
+			} else {
+				// Gap exists
+				textToAppend = "\n\n[...]\n\n" + c.content
+			}
 		}
 		prevIndex = c.index
+
+		// Apply Auto-Paragraph formatting to chunk
+		textToAppend = re.ReplaceAllString(textToAppend, "$1\n\n$2")
+
+		// Escape for HTML presentation and preserve newlines as <br>
+		escaped := html.EscapeString(textToAppend)
+		htmlChunk := strings.ReplaceAll(escaped, "\n", "<br>")
+
+		// Emit explicit HTMX SSE 'chunk' event
+		fmt.Fprintf(w, "event: chunk\ndata: %s\n\n", htmlChunk)
+		flusher.Flush()
 	}
 
-	// Apply formatting (Auto-Paragraph)
-	// regex: text.replace(/([.!?])\s+(?=[A-Z])/g, "$1\n\n")
-	re := regexp.MustCompile(`([.!?])\s+([A-Z])`)
-	finalText := re.ReplaceAllString(sb.String(), "$1\n\n$2")
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"document_id": docID,
-		"snapshot":    finalText,
-	})
+	fmt.Fprintf(w, "event: close\ndata: \n\n")
+	flusher.Flush()
 }
