@@ -1494,6 +1494,19 @@
 
   </div>
 
+  <!-- ══ Snapshot Modal ══════════════════════════════════ -->
+  <div class="modal-overlay" id="snapshot-modal" role="dialog" aria-modal="true" aria-labelledby="snapshot-modal-title">
+    <div class="modal-box" style="max-width: 800px; width: 90vw; max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-title" id="snapshot-modal-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Document Snapshot</span>
+        <button onclick="document.getElementById('snapshot-modal').classList.remove('open')" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px;">&times;</button>
+      </div>
+      <div id="snapshot-content" class="markdown-body" style="flex: 1; overflow-y: auto; padding-right: 10px; margin-top: 10px; font-family: var(--font); color: var(--text-primary); line-height: 1.6;">
+        <!-- Snapshot text injected here -->
+      </div>
+    </div>
+  </div>
+
   <!-- ══ Edit Modal ══════════════════════════════════ -->
   <div class="modal-overlay" id="edit-modal" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
     <div class="modal-box">

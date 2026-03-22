@@ -1284,7 +1284,8 @@ const ChatApp = (() => {
               `}
             </div>
             ${doc.status === 'completed' ? `
-            <div style="display: flex; align-items: center; gap: 6px;" title="Chat with document">
+            <div style="display: flex; align-items: center; gap: 8px;" title="Chat or View Document">
+              <button class="doc-view-btn" onclick="ChatApp.viewDocumentSnapshot(${doc.id}, '${escapeHtml(doc.document_name).replace(/'/g, "\\'")}')" style="background: none; border: 1px solid var(--border-mid); color: var(--text-secondary); border-radius: 4px; padding: 2px 6px; font-size: 11px; cursor: pointer; transition: all 0.2s;">Snapshot</button>
               <span style="font-size: 11px; color: white">Chat</span>
               <label class="switch" style="transform: scale(0.8); margin: 0;">
                 <input type="checkbox" class="doc-toggle" data-doc="${escapeHtml(doc.document_name)}" ${isChecked}>
@@ -1460,6 +1461,30 @@ const ChatApp = (() => {
     }
   }
 
+  async function viewDocumentSnapshot(id, name) {
+    const modal = $('snapshot-modal');
+    const title = $('snapshot-modal-title')?.firstElementChild;
+    const content = $('snapshot-content');
+    if (!modal || !title || !content) return;
+
+    title.textContent = `Snapshot: ${name}`;
+    content.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px;">Generating snapshot...</div>';
+    modal.classList.add('open');
+
+    try {
+      const response = await fetch(`/v1/documents/${id}/snapshot`);
+      if (!response.ok) {
+        throw new Error(await response.text() || `HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      content.innerHTML = renderMarkdown(data.snapshot);
+    } catch (err) {
+      console.error(err);
+      content.innerHTML = `<div style="color: #ef4444; padding: 20px;">Failed to load snapshot: ${err.message}</div>`;
+    }
+  }
+
+
   return {
     init,
     deleteDocument,
@@ -1483,6 +1508,7 @@ const ChatApp = (() => {
     selectSystemPrompt,
     editPromptUI,
     deletePromptUI,
+    viewDocumentSnapshot,
   };
 })();
 

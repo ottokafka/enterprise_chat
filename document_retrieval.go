@@ -613,3 +613,94 @@ func ragGenerate(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @route  GET /v1/documents/{id}/snapshot
+// @desc   Reconstructs the original document text from chunks
+// @access Private (apiAuth)
+// ─────────────────────────────────────────────────────────────────────────────
+
+func getDocumentSnapshot(w http.ResponseWriter, r *http.Request) {
+	docIDStr := r.PathValue("id")
+	docID, err := strconv.ParseUint(docIDStr, 10, 32)
+	if err != nil {
+		http.Error(w, `{"error":"Invalid document ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	ch := getClickhouseClient()
+	if ch == nil {
+		http.Error(w, `{"error":"Database not initialized"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Fetch all text chunks for this document, sorted by index
+	q := `
+		SELECT chunk_index, content
+		FROM rag_embeddings
+		WHERE document_id = $1 AND chunk_type = 'text'
+		ORDER BY chunk_index ASC
+	`
+	rows, err := ch.Query(context.Background(), q, uint32(docID))
+	if err != nil {
+		log.Printf("[snapshot] Query error: %v\n", err)
+		http.Error(w, `{"error":"Failed to retrieve document chunks"}`, http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type chunkData struct {
+		index   uint32
+		content string
+	}
+	var chunks []chunkData
+	for rows.Next() {
+		var c chunkData
+		if err := rows.Scan(&c.index, &c.content); err != nil {
+			continue
+		}
+		chunks = append(chunks, c)
+	}
+
+	if len(chunks) == 0 {
+		http.Error(w, `{"error":"Document not found or has no text chunks"}`, http.StatusNotFound)
+		return
+	}
+
+	var sb strings.Builder
+	var prevIndex uint32
+
+	for i, c := range chunks {
+		if i == 0 {
+			sb.WriteString(c.content)
+			prevIndex = c.index
+			continue
+		}
+
+		if c.index == prevIndex+1 {
+			// Sequential chunk: trim first 30 words (overlap)
+			words := strings.Fields(c.content)
+			if len(words) > 30 {
+				sb.WriteString(" " + strings.Join(words[30:], " "))
+			} else {
+				// If chunk has <= 30 words, just append space to be safe, though unusual
+				sb.WriteString(" ")
+			}
+		} else {
+			// Gap exists
+			sb.WriteString("\n\n[...]\n\n" + c.content)
+		}
+		prevIndex = c.index
+	}
+
+	// Apply formatting (Auto-Paragraph)
+	// regex: text.replace(/([.!?])\s+(?=[A-Z])/g, "$1\n\n")
+	re := regexp.MustCompile(`([.!?])\s+([A-Z])`)
+	finalText := re.ReplaceAllString(sb.String(), "$1\n\n$2")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"document_id": docID,
+		"snapshot":    finalText,
+	})
+}
