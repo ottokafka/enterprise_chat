@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Developer Documentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Syntax highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+  <style>
+    :root {
+      --bg-base: #0d0d0d;
+      --bg-surface: #141414;
+      --bg-card: #1a1a1a;
+      --bg-hover: #222222;
+      --border: #2a2a2a;
+      --border-mid: #333333;
+      --text-primary: #e8e8e8;
+      --text-secondary: #9a9a9a;
+      --text-muted: #555555;
+      --accent: #6366f1;
+      --accent-hover: #4f52e0;
+      --font: 'Inter', system-ui, sans-serif;
+      --radius-sm: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg-base);
+      color: var(--text-primary);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 60px;
+    }
+
+    .topbar {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-surface);
+      display: flex;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .back-btn {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: color 0.2s;
+    }
+
+    .back-btn:hover {
+      color: var(--text-primary);
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 24px;
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: var(--text-secondary);
+      font-size: 15px;
+      margin-bottom: 40px;
+    }
+
+    h2 {
+      font-size: 20px;
+      font-weight: 600;
+      margin: 32px 0 16px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+
+    .section-desc {
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-mid);
+      border-radius: var(--radius-sm);
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+    }
+
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.25);
+    }
+
+    .api-key-list {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .api-key-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-mid);
+      border-radius: 6px;
+    }
+
+    .api-key-value {
+      font-family: monospace;
+      font-size: 14px;
+      color: #a8b4d8;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 4px 8px;
+      border-radius: 4px;
+      word-break: break-all;
+    }
+
+    .api-key-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    pre {
+      background: #0d0d12;
+      border: 1px solid var(--border-mid);
+      border-radius: 6px;
+      padding: 16px;
+      overflow-x: auto;
+      margin-bottom: 16px;
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+    }
+
+    .response-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 16px 0 8px;
+    }
+
+    /* Modal for displaying full key just once */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-content {
+      background: var(--bg-card);
+      border: 1px solid var(--border-mid);
+      padding: 24px;
+      border-radius: 8px;
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .modal-content h3 {
+      margin-bottom: 12px;
+    }
+
+    .modal-content p {
+      color: var(--text-secondary);
+      font-size: 13px;
+      margin-bottom: 20px;
+    }
+
+    .copy-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      padding: 10px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+    }
+
+    .copy-box input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-primary);
+      font-family: monospace;
+      outline: none;
+    }
+
+    .copy-box button {
+      background: var(--bg-hover);
+      border: none;
+      color: var(--text-primary);
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .copy-box button:hover {
+      background: var(--border-mid);
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="topbar">
+    <a href="/chat" class="back-btn">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="19" y1="12" x2="5" y2="12"></line>
+        <polyline points="12 19 5 12 12 5"></polyline>
+      </svg>
+      Back to Chat
+    </a>
+  </div>
+
+  <div class="container">
+    <h1>Developer API Documentation</h1>
+    <p class="subtitle">Integrate AliceGPT into your own applications using our REST API endpoints.</p>
+
+    <!-- API Keys Section -->
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 style="margin: 0; border: none; padding: 0;">API Keys</h2>
+        <button class="btn" id="generate-key-btn">Generate New Key</button>
+      </div>
+      <p class="section-desc">Manage your API keys used to authenticate requests. Do not share these keys.</p>
+
+      <div id="loading-keys" style="font-size: 13px; color: var(--text-muted);">Loading keys...</div>
+      <div class="api-key-list" id="api-keys-container"></div>
+    </div>
+
+    <!-- Documentation Sections -->
+    <div id="docs-container">
+
+      <!-- Normal Chat -->
+      <h2>Normal Chat Completion</h2>
+      <p class="section-desc">Generate conversational responses from the standard text model using a messages array.</p>
+      <pre><code class="language-bash example-code">curl https://alice.forest-interactive.com/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
+  -d '{
+    "model": "Qwen3.5-35B-A3B-GGUF",
+    "messages": [
+      { "role": "system", "content": "You are a helpful assistant." },
+      { "role": "user", "content": "Hello!" }
+    ],
+    "temperature": 0.7
+  }'</code></pre>
+      <div class="response-label">Response</div>
+      <pre><code class="language-json">{
+  "id": "chatcmpl-123",
+  "choices": [{
+    "index": 0,
+    "message": { "role": "assistant", "content": "Hello! How can I assist you?" },
+    "finish_reason": "stop"
+  }]
+}</code></pre>
+
+      <!-- Multimodal -->
+      <h2>Multimodal with Vision</h2>
+      <p class="section-desc">Pass images alongside text to the model for visual understanding and reasoning.</p>
+      <pre><code class="language-bash example-code">curl https://alice.forest-interactive.com/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
+  -d '{
+    "model": "Qwen3.5-35B-A3B-GGUF",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          { "type": "text", "text": "What is in this image?" },
+          { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,...base64_string..." } }
+        ]
+      }
+    ]
+  }'</code></pre>
+      <div class="response-label">Response</div>
+      <pre><code class="language-json">{
+  "id": "chatcmpl-vision-123",
+  "choices": [{
+    "index": 0,
+    "message": { "role": "assistant", "content": "This image shows a siamese cat sitting on a wooden floor." },
+    "finish_reason": "stop"
+  }]
+}</code></pre>
+
+      <!-- Embeddings -->
+      <h2>Embeddings</h2>
+      <p class="section-desc">Convert text strings into vector representations for vector search and retrieval tasks.
+      </p>
+      <pre><code class="language-bash example-code">curl https://alice.forest-interactive.com/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
+  -d '{
+    "model": "Qwen3-Embedding-8B-GGUF",
+    "input": "The food was delicious and the service was excellent."
+  }'</code></pre>
+      <div class="response-label">Response</div>
+      <pre><code class="language-json">{
+  "object": "list",
+  "data": [
+    {
+      "object": "embedding",
+      "index": 0,
+      "embedding": [
+        -0.006929283495992422,
+        -0.005336422007530928
+      ]
+    }
+  ],
+  "model": "Qwen3-Embedding-8B-GGUF",
+  "usage": {
+    "prompt_tokens": 5,
+    "total_tokens": 5
+  }
+}</code></pre>
+
+      <!-- Image Gen -->
+      <h2>Image Generation</h2>
+      <p class="section-desc">Generate images from a textual input prompt, returned as base64 encoded strings.</p>
+      <pre><code class="language-bash example-code">curl https://alice.forest-interactive.com/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
+  -d '{
+    "prompt": "a white siamese cat",
+    "size": "512x512",
+    "response_format": "b64_json"
+  }'</code></pre>
+      <div class="response-label">Response</div>
+      <pre><code class="language-json">{
+  "created": 1728576000,
+  "data": [ { "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" } ]
+}</code></pre>
+
+      <!-- Rerank -->
+      <h2>Document Reranking</h2>
+      <p class="section-desc">Re-score and rank a list of documents based on their relevance to a search query.</p>
+      <pre><code class="language-bash example-code">curl -X POST https://alice.forest-interactive.com/v1/rerank \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
+  -d '{
+    "model": "Qwen3-Reranker-8B",
+    "query": "What is machine learning?",
+    "documents": [
+      "Machine learning is a subset of artificial intelligence that enables systems to learn from data.",
+      "Deep learning uses neural networks with multiple layers to process information.",
+      "Artificial intelligence encompasses both machine learning and deep learning."
+    ],
+    "top_n": 2
+  }'</code></pre>
+      <div class="response-label">Response</div>
+      <pre><code class="language-json">{
+  "model": "Qwen3-Reranker-8B",
+  "object": "list",
+  "usage": { "prompt_tokens": 266, "total_tokens": 266 },
+  "results": [
+    { "index": 0, "relevance_score": 0.9836259484291077 },
+    { "index": 2, "relevance_score": 0.10805725306272507 }
+  ]
+}</code></pre>
+    </div>
+  </div>
+
+  <!-- New Key Modal -->
+  <div class="modal-overlay" id="new-key-modal">
+    <div class="modal-content">
+      <h3>New API Key Generated</h3>
+      <p>Please copy your new API key below. You won't be able to see it again!</p>
+      <div class="copy-box">
+        <input type="text" id="new-key-input" readonly>
+        <button id="copy-key-btn">Copy</button>
+      </div>
+      <button class="btn" style="width: 100%;" onclick="closeModal()">Done</button>
+    </div>
+  </div>
+
+  <script src="/js/developer.js"></script>
+</body>
+
+</html>
