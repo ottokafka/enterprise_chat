@@ -1148,69 +1148,109 @@
       padding: 0;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 12px;
     }
 
     .progress-item {
-      background: var(--bg-card);
-      border: 1px solid var(--border-mid);
-      border-radius: var(--radius-sm);
-      padding: 10px;
-      font-size: 12.5px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 16px;
       position: relative;
+      transition: all var(--transition);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .progress-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
     }
 
     .progress-item-title {
-      font-weight: 600;
-      color: var(--text-primary);
-      margin-bottom: 4px;
-      padding-right: 24px;
+      font-size: 15px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 2px;
+      padding-right: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      letter-spacing: -0.2px;
     }
 
     .progress-item-stage {
-      color: var(--text-muted);
-      font-size: 11px;
-      margin-bottom: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 10px;
+      opacity: 0.9;
     }
 
-    .progress-bar-bg {
-      background: var(--bg-surface);
-      height: 6px;
-      border-radius: 4px;
-      overflow: hidden;
-      position: relative;
+    .progress-item-meta {
+      font-size: 12px;
+      color: #9ca3af;
+      margin-bottom: 4px;
     }
 
-    .progress-bar-fill {
-      height: 100%;
-      background: var(--accent);
-      width: 0%;
-      transition: width 0.3s ease;
-      border-radius: 4px;
+    .doc-actions-row {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 12px;
+      margin-top: 12px;
     }
 
-    .doc-delete-btn {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      width: 22px;
-      height: 22px;
-      background: transparent;
+    .doc-action-btn {
+      background: none;
       border: none;
       color: var(--text-muted);
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: 4px;
+      padding: 6px;
+      border-radius: 6px;
       transition: all var(--transition);
     }
 
-    .doc-delete-btn:hover {
-      background: rgba(239, 68, 68, 0.15);
+    .doc-action-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .doc-share-btn {
+      background: #2a2a2a;
+      border: 1px solid #3a3a3a;
+      color: #e8e8e8;
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition);
+      margin-right: auto;
+    }
+
+    .doc-share-btn:hover {
+      background: #3a3a3a;
+    }
+
+    .doc-chat-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #e8e8e8;
+    }
+
+    .doc-delete-btn-new {
+      color: var(--text-muted);
+      transition: all var(--transition);
+    }
+
+    .doc-delete-btn-new:hover {
       color: #ef4444;
     }
 

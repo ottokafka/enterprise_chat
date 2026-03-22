@@ -1268,40 +1268,49 @@ const ChatApp = (() => {
 
         li.innerHTML = `
           <div class="progress-item-title" title="${escapeHtml(doc.document_name)}">${escapeHtml(doc.document_name)}</div>
-          <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 6px;">
-            <div>
-              ${statusHtml}
-              <div style="font-size: 10px; color: white; margin-top: 4px;">Uploaded: ${date}</div>
-              <div style="font-size: 10px; color: #9ca3af; margin-top: 2px;">Status: ${sharedStatus}</div>
-              ${doc.user_id === currentUserId ? `
-              <button class="share-doc-btn" onclick='ChatApp.openShareModal(${doc.id}, ${doc.is_global}, ${JSON.stringify(doc.shared_with_user_ids || [])})' style="background: none; border: 1px solid var(--border-mid); color: var(--text-secondary); border-radius: 4px; padding: 2px 6px; font-size: 11px; cursor: pointer; margin-top: 6px; transition: all 0.2s;">
-                Manage Sharing
+          ${statusHtml}
+          <div class="progress-item-meta">Uploaded: ${date}</div>
+          <div class="progress-item-meta">Status: ${sharedStatus}</div>
+          
+          <div class="doc-actions-row">
+            ${doc.user_id === currentUserId ? `
+              <button class="doc-share-btn" onclick='ChatApp.openShareModal(${doc.id}, ${doc.is_global}, ${JSON.stringify(doc.shared_with_user_ids || [])})'>
+                Share
               </button>
-              ` : `
-              <div style="margin-top: 6px; font-size: 11px; color: white;">
-                <em>Global/Shared Workspace Document</em>
+            ` : `
+              <div style="margin-right: auto; font-size: 11px; color: var(--text-muted); font-style: italic;">
+                Shared Workspace
               </div>
-              `}
-            </div>
+            `}
+
             ${doc.status === 'completed' ? `
-            <div style="display: flex; align-items: center; gap: 8px;" title="Chat or View Document">
-              <button class="doc-view-btn" onclick="ChatApp.viewDocumentSnapshot(${doc.id}, '${escapeHtml(doc.document_name).replace(/'/g, "\\'")}')" style="background: none; border: 1px solid var(--border-mid); color: var(--text-secondary); border-radius: 4px; padding: 2px 6px; font-size: 11px; cursor: pointer; transition: all 0.2s;">Snapshot</button>
-              <span style="font-size: 11px; color: white">Chat</span>
-              <label class="switch" style="transform: scale(0.8); margin: 0;">
-                <input type="checkbox" class="doc-toggle" data-doc="${escapeHtml(doc.document_name)}" ${isChecked}>
-                <span class="slider"></span>
-              </label>
-            </div>
+              <button class="doc-action-btn" title="View Snapshot" onclick="ChatApp.viewDocumentSnapshot(${doc.id}, '${escapeHtml(doc.document_name).replace(/'/g, "\\'")}')">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+            ` : ''}
+
+            ${doc.user_id === currentUserId ? `
+              <button class="doc-action-btn doc-delete-btn-new" title="Delete Document" onclick="ChatApp.deleteDocument(${doc.id})">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+              </button>
+            ` : ''}
+
+            ${doc.status === 'completed' ? `
+              <div class="doc-chat-toggle">
+                <span>Chat</span>
+                <label class="switch">
+                  <input type="checkbox" class="doc-toggle" data-doc="${escapeHtml(doc.document_name)}" ${isChecked}>
+                  <span class="slider"></span>
+                </label>
+              </div>
             ` : ''}
           </div>
-          ${doc.user_id === currentUserId ? `
-          <button class="doc-delete-btn" aria-label="Delete document" onclick="ChatApp.deleteDocument(${doc.id})">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            </svg>
-          </button>
-          ` : ''}
         `;
 
         const toggle = li.querySelector('.doc-toggle');
