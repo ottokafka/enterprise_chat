@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AliceGPT – Chat</title>
+  <title>Enterprise – Chat</title>
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -700,23 +700,28 @@
       display: none;
       align-items: center;
       justify-content: center;
-      gap: 6px;
-      width: 100%;
-      padding: 8px;
-      margin-bottom: 8px;
+      gap: 7px;
+      margin: 0 auto 12px;
+      width: fit-content;
+      padding: 8px 20px;
       background: var(--bg-card);
       border: 1px solid var(--border-mid);
-      border-radius: var(--radius-md);
-      color: var(--text-secondary);
+      border-radius: 50px;
+      color: #f87171;
       font-family: var(--font);
-      font-size: 13.5px;
+      font-size: 13px;
+      font-weight: 600;
       cursor: pointer;
       transition: all var(--transition);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
 
     #stop-btn:hover {
       background: var(--bg-hover);
-      color: var(--text-primary);
+      border-color: #ef4444;
+      color: #ef4444;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
     }
 
     .input-row {
@@ -1295,6 +1300,7 @@
         transform: translateX(0);
       }
     }
+
     /* ── System Prompt Selector ──────────────── */
     .prompt-option {
       padding: 8px 10px;
@@ -1466,17 +1472,26 @@
           <div class="system-prompt-container" style="position: relative;">
             <button class="input-icon-btn" id="system-prompt-btn" title="System Prompt" aria-label="System Prompt">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+                <path
+                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z" />
               </svg>
             </button>
-            <div id="system-prompt-menu" style="display: none; position: absolute; bottom: 100%; left: 0; background: var(--bg-surface); border: 1px solid var(--border-mid); border-radius: var(--radius-md); padding: 8px; width: 220px; box-shadow: 0 -10px 25px rgba(0,0,0,0.5); z-index: 60; margin-bottom: 8px;">
-              <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; padding: 4px 8px;">Select System Prompt</div>
+            <div id="system-prompt-menu"
+              style="display: none; position: absolute; bottom: 100%; left: 0; background: var(--bg-surface); border: 1px solid var(--border-mid); border-radius: var(--radius-md); padding: 8px; width: 220px; box-shadow: 0 -10px 25px rgba(0,0,0,0.5); z-index: 60; margin-bottom: 8px;">
+              <div
+                style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; padding: 4px 8px;">
+                Select System Prompt</div>
               <div id="system-prompt-list" style="max-height: 200px; overflow-y: auto;">
-                <div class="prompt-option active" data-id="none" style="padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--text-primary);">None (Default)</div>
+                <div class="prompt-option active" data-id="none"
+                  style="padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--text-primary);">
+                  None (Default)</div>
               </div>
               <div style="border-top: 1px solid var(--border); margin: 4px 0; padding-top: 4px;">
-                <div id="manage-prompts-btn" style="padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--accent); display: flex; align-items: center; gap: 6px;">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                <div id="manage-prompts-btn"
+                  style="padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--accent); display: flex; align-items: center; gap: 6px;">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
                   Manage Prompts
                 </div>
               </div>
@@ -1540,12 +1555,16 @@
 
   <!-- ══ Snapshot Modal ══════════════════════════════════ -->
   <div class="modal-overlay" id="snapshot-modal" role="dialog" aria-modal="true" aria-labelledby="snapshot-modal-title">
-    <div class="modal-box" style="max-width: 800px; width: 90vw; max-height: 90vh; display: flex; flex-direction: column;">
-      <div class="modal-title" id="snapshot-modal-title" style="display: flex; justify-content: space-between; align-items: center;">
+    <div class="modal-box"
+      style="max-width: 800px; width: 90vw; max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-title" id="snapshot-modal-title"
+        style="display: flex; justify-content: space-between; align-items: center;">
         <span>Document Snapshot</span>
-        <button onclick="document.getElementById('snapshot-modal').classList.remove('open')" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px;">&times;</button>
+        <button onclick="document.getElementById('snapshot-modal').classList.remove('open')"
+          style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px;">&times;</button>
       </div>
-      <div id="snapshot-content" class="markdown-body" style="flex: 1; overflow-y: auto; padding-right: 10px; margin-top: 10px; font-family: var(--font); color: var(--text-primary); line-height: 1.6;">
+      <div id="snapshot-content" class="markdown-body"
+        style="flex: 1; overflow-y: auto; padding-right: 10px; margin-top: 10px; font-family: var(--font); color: var(--text-primary); line-height: 1.6;">
         <!-- Snapshot text injected here -->
       </div>
     </div>
@@ -1574,8 +1593,10 @@
           <span style="color: var(--text-muted); font-size: 12px;">Visible to everyone</span>
         </label>
       </div>
-      <input type="text" id="share-search-input" placeholder="Search employees..." style="width: 100%; padding: 8px 12px; margin-bottom: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-mid); background: var(--bg-input); color: var(--text-primary); outline: none;">
-      <div id="share-users-list" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-mid); border-radius: var(--radius-sm); padding: 8px; margin-bottom: 16px; background: var(--bg-card); display: flex; flex-direction: column; gap: 6px;">
+      <input type="text" id="share-search-input" placeholder="Search employees..."
+        style="width: 100%; padding: 8px 12px; margin-bottom: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-mid); background: var(--bg-input); color: var(--text-primary); outline: none;">
+      <div id="share-users-list"
+        style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-mid); border-radius: var(--radius-sm); padding: 8px; margin-bottom: 16px; background: var(--bg-card); display: flex; flex-direction: column; gap: 6px;">
         <!-- Checkboxes for users injected here -->
       </div>
       <div class="modal-actions">
@@ -1586,25 +1607,33 @@
   </div>
 
   <!-- ══ System Prompts Modal ══════════════════════════════════ -->
-  <div class="modal-overlay" id="system-prompts-modal" role="dialog" aria-modal="true" aria-labelledby="prompts-modal-title">
+  <div class="modal-overlay" id="system-prompts-modal" role="dialog" aria-modal="true"
+    aria-labelledby="prompts-modal-title">
     <div class="modal-box" style="max-width: 600px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <div class="modal-title" id="prompts-modal-title" style="margin-bottom: 0;">System Prompts</div>
-        <button class="btn-primary" id="add-prompt-btn" style="padding: 6px 12px; font-size: 12px;">+ New Prompt</button>
+        <button class="btn-primary" id="add-prompt-btn" style="padding: 6px 12px; font-size: 12px;">+ New
+          Prompt</button>
       </div>
-      
-      <div id="prompts-manager-list" style="display: flex; flex-direction: column; gap: 12px; max-height: 400px; overflow-y: auto; margin-bottom: 20px; padding-right: 4px;">
+
+      <div id="prompts-manager-list"
+        style="display: flex; flex-direction: column; gap: 12px; max-height: 400px; overflow-y: auto; margin-bottom: 20px; padding-right: 4px;">
         <!-- Prompt items injected here -->
       </div>
 
-      <div id="prompt-edit-form" style="display: none; border-top: 1px solid var(--border-mid); margin-top: 20px; padding-top: 20px;">
+      <div id="prompt-edit-form"
+        style="display: none; border-top: 1px solid var(--border-mid); margin-top: 20px; padding-top: 20px;">
         <div style="margin-bottom: 12px;">
-          <label style="display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">Prompt Name</label>
-          <input type="text" id="prompt-name-input" placeholder="e.g. Python Expert" style="width: 100%; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-mid); background: var(--bg-input); color: var(--text-primary); outline: none;">
+          <label style="display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">Prompt
+            Name</label>
+          <input type="text" id="prompt-name-input" placeholder="e.g. Python Expert"
+            style="width: 100%; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-mid); background: var(--bg-input); color: var(--text-primary); outline: none;">
         </div>
         <div style="margin-bottom: 16px;">
-          <label style="display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">System Content</label>
-          <textarea id="prompt-content-input" placeholder="e.g. You are a senior Python developer..." style="width: 100%; min-height: 120px; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-mid); background: var(--bg-input); color: var(--text-primary); outline: none; resize: vertical;"></textarea>
+          <label style="display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">System
+            Content</label>
+          <textarea id="prompt-content-input" placeholder="e.g. You are a senior Python developer..."
+            style="width: 100%; min-height: 120px; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-mid); background: var(--bg-input); color: var(--text-primary); outline: none; resize: vertical;"></textarea>
         </div>
         <div class="modal-actions">
           <button class="btn-secondary" id="prompt-edit-cancel">Cancel</button>

@@ -479,7 +479,7 @@ const ChatApp = (() => {
   function setStreamingUI(streaming) {
     const stopBtn = $('stop-btn');
     const sendBtn = $('send-btn');
-    if (stopBtn) stopBtn.style.display = streaming ? '' : 'none';
+    if (stopBtn) stopBtn.style.display = streaming ? 'flex' : 'none';
     if (sendBtn) sendBtn.disabled = streaming;
   }
 

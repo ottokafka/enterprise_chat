@@ -45,7 +45,7 @@ func main() {
 	addr := fmt.Sprintf("%s:%s", host, port)
 
 	fmt.Printf("\n------------------------------------------------------------\n")
-	fmt.Printf("AliceGPT api started\n")
+	fmt.Printf("Enterprise Chat started\n")
 	fmt.Printf("listening on: http://%s\n", addr)
 	fmt.Printf("------------------------------------------------------------\n")
 
