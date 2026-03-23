@@ -5,7 +5,7 @@ package main
 // Replaces:
 //   - mammoth       → archive/zip + encoding/xml  (DOCX text extraction)
 //   - adm-zip       → archive/zip                 (DOCX image extraction)
-//   - pdf2pic       → os/exec + ImageMagick        (PDF → images)
+//   - pdf2pic       → dslipak/pdf + pdfcpu         (PDF → text + images)
 //   - @clickhouse   → clickhouse-go/v2             (vector store)
 //   - openai        → openai/openai-go             (embeddings + vision)
 //   - EventEmitter  → Go channels + sync.Map       (SSE progress events)
@@ -23,16 +23,17 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/dslipak/pdf"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
+	"github.com/pdfcpu/pdfcpu/pkg/api"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -299,8 +300,7 @@ func processDocx(data []byte, documentName string, userId, documentId uint32, on
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PDF processor — replaces pdf2pic using ImageMagick (convert) via os/exec
-// brew install imagemagick must be installed (user confirmed done)
+// PDF processor — replaces ImageMagick (convert) using dslipak/pdf and pdfcpu
 // ─────────────────────────────────────────────────────────────────────────────
 
 const maxPDFPages = 50
@@ -308,82 +308,100 @@ const maxPDFPages = 50
 func processPdf(data []byte, documentName string, userId, documentId uint32, onProgress ProgressFn) ([]EmbeddingRecord, error) {
 	var records []EmbeddingRecord
 
-	onProgress("Converting PDF pages to images...", 0, 100)
-	log.Printf("[pdf] Converting pages: %s\n", documentName)
-
-	// Write the PDF to a temp file so ImageMagick can read it
+	// 1. Setup Temp Files
 	tmpPDF, err := os.CreateTemp("", "ingest-*.pdf")
 	if err != nil {
-		return nil, fmt.Errorf("[pdf] temp file error: %w", err)
+		return nil, fmt.Errorf("temp file error: %w", err)
 	}
 	defer os.Remove(tmpPDF.Name())
 	if _, err := tmpPDF.Write(data); err != nil {
-		return nil, fmt.Errorf("[pdf] write temp error: %w", err)
+		return nil, fmt.Errorf("write temp error: %w", err)
 	}
 	tmpPDF.Close()
 
-	// Create a temp dir for per-page PNGs
-	tmpDir, err := os.MkdirTemp("", "ingest-pages-*")
+	// 2. Extract Images to a temp directory using pdfcpu
+	imgDir, err := os.MkdirTemp("", "pdf-images-*")
 	if err != nil {
-		return nil, fmt.Errorf("[pdf] temp dir error: %w", err)
+		return nil, err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer os.RemoveAll(imgDir)
 
-	// ImageMagick: convert all pages to PNGs at 100 dpi, max width 1200
-	outPattern := filepath.Join(tmpDir, "page-%04d.png")
-	cmd := exec.Command("convert",
-		"-density", "100",
-		"-resize", "1200x",
-		tmpPDF.Name(),
-		outPattern,
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("[pdf] ImageMagick error: %v — %s\n", err, string(out))
-		return records, nil // graceful return like the JS version
+	onProgress("Extracting text and images...", 10, 100)
+	// pdfcpu extracts all embedded images as individual files
+	err = api.ExtractImagesFile(tmpPDF.Name(), imgDir, nil, nil)
+	if err != nil {
+		log.Printf("[pdf] image extraction warning: %v", err)
 	}
 
-	// Collect generated pages in order
-	entries, err := filepath.Glob(filepath.Join(tmpDir, "page-*.png"))
-	if err != nil || len(entries) == 0 {
-		log.Printf("[pdf] No pages extracted from PDF\n")
-		return records, nil
+	// 3. Extract Text using dslipak/pdf
+	contentReader, err := pdf.Open(tmpPDF.Name())
+	if err != nil {
+		return nil, fmt.Errorf("failed to open pdf for text: %w", err)
 	}
 
-	count := len(entries)
-	if count > maxPDFPages {
-		count = maxPDFPages
+	numPages := contentReader.NumPage()
+	if numPages > maxPDFPages {
+		numPages = maxPDFPages
 	}
-	log.Printf("[pdf] Processing %d pages\n", count)
 
-	for i := 0; i < count; i++ {
-		onProgress(fmt.Sprintf("Analyzing page %d/%d...", i+1, count), i, count)
+	for i := 1; i <= numPages; i++ {
+		onProgress(fmt.Sprintf("Processing page %d/%d...", i, numPages), i, numPages)
 
-		imgData, err := os.ReadFile(entries[i])
-		if err != nil {
-			continue
+		// --- Part A: Handle Text ---
+		page := contentReader.Page(i)
+		text, _ := page.GetPlainText(nil)
+		text = strings.TrimSpace(text)
+
+		if text != "" {
+			embedding, err := getEmbedding(text)
+			if err == nil {
+				records = append(records, EmbeddingRecord{
+					UserID:       userId,
+					DocumentID:   documentId,
+					DocumentName: documentName,
+					ChunkType:    "text",
+					Content:      fmt.Sprintf("[Page %d Text]: %s", i, text),
+					ChunkIndex:   len(records),
+					Embedding:    embedding,
+				})
+			}
 		}
 
-		b64 := base64.StdEncoding.EncodeToString(imgData)
-		insightText, err := getVisionInsight(b64, "png")
-		if err != nil || insightText == "" {
-			continue
-		}
+		// --- Part B: Handle Extracted Images for this page ---
+		// pdfcpu names images like: page_1_Image1.jpg, page_1_Image2.png, etc.
+		pattern := filepath.Join(imgDir, fmt.Sprintf("page_%d_*.png", i))
+		// Note: pdfcpu might output jpg/png depending on source. Check for both.
+		imgFiles, _ := filepath.Glob(pattern)
+		jpgPattern, _ := filepath.Glob(filepath.Join(imgDir, fmt.Sprintf("page_%d_*.jpg", i)))
+		imgFiles = append(imgFiles, jpgPattern...)
 
-		embedding, err := getEmbedding(insightText)
-		if err != nil {
-			log.Printf("[pdf] embedding error on page %d: %v\n", i+1, err)
-			continue
-		}
+		for _, imgPath := range imgFiles {
+			imgData, err := os.ReadFile(imgPath)
+			if err != nil {
+				continue
+			}
 
-		records = append(records, EmbeddingRecord{
-			UserID:       userId,
-			DocumentID:   documentId,
-			DocumentName: documentName,
-			ChunkType:    "image_insight",
-			Content:      fmt.Sprintf("[Page %d Insight]: %s", i+1, insightText),
-			ChunkIndex:   i,
-			Embedding:    embedding,
-		})
+			// Run Vision API on the specific image found on this page
+			b64 := base64.StdEncoding.EncodeToString(imgData)
+			ext := filepath.Ext(imgPath)[1:] // remove dot
+			insightText, err := getVisionInsight(b64, ext)
+			if err != nil || insightText == "" {
+				continue
+			}
+
+			embedding, err := getEmbedding(insightText)
+			if err == nil {
+				records = append(records, EmbeddingRecord{
+					UserID:       userId,
+					DocumentID:   documentId,
+					DocumentName: documentName,
+					ChunkType:    "image_insight",
+					Content:      fmt.Sprintf("[Page %d Image Insight]: %s", i, insightText),
+					ChunkIndex:   len(records),
+					Embedding:    embedding,
+				})
+			}
+		}
 	}
 
 	onProgress("Finalizing...", 100, 100)
@@ -969,7 +987,7 @@ func shareDocument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		IsGlobal         *bool    `json:"is_global"`
+		IsGlobal          *bool    `json:"is_global"`
 		SharedWithUserIds []uint32 `json:"shared_with_user_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.IsGlobal == nil || body.SharedWithUserIds == nil {

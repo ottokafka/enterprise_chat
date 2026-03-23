@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS default.rag_embeddings
     embedding Array(Float32),
     created_at Date DEFAULT toDate(now())
 ) ENGINE = MergeTree()
+
 -- 6. System Prompts Table
 CREATE TABLE IF NOT EXISTS default.system_prompts
 (
