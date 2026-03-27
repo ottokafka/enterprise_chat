@@ -33,3 +33,4 @@ docker-compose.staging.yml
 /uploads/*
 
 enterprise_chat
+/tests/*
