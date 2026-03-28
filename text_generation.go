@@ -25,9 +25,9 @@ import (
 	"encoding/xml"
 	"fmt"
 	"image"
+	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
-	_ "image/gif"
 	"io"
 	"log"
 	"net/http"
@@ -471,8 +471,8 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 	json.Unmarshal(messagesJSON, &openaiMessages)
 
 	llmClient := openai.NewClient(
-		option.WithBaseURL("http://192.168.1.235:8080/v1"),
-		option.WithAPIKey("sk-1234567890"),
+		option.WithBaseURL(os.Getenv("MAIN_GPU_URL")),
+		option.WithAPIKey(os.Getenv("OPENAI_API_KEY")),
 	)
 
 	params := openai.ChatCompletionNewParams{

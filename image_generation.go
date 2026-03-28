@@ -61,7 +61,7 @@ func imageGenerate(w http.ResponseWriter, r *http.Request) {
 	fullURL := imageGenURL + "/images/generations"
 
 	// Authorization
-	apiKey := os.Getenv("ALICE_API_KEY")
+	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		apiKey = "fake_key" // fallback
 	}

@@ -42,8 +42,8 @@ import (
 
 func getEmbedding(text string) ([]float64, error) {
 	client := openai.NewClient(
-		option.WithBaseURL("http://192.168.1.235:8081/v1"),
-		option.WithAPIKey("sk-1234567890"),
+		option.WithBaseURL(os.Getenv("EMBEDDING_URL")),
+		option.WithAPIKey(os.Getenv("OPENAI_API_KEY")),
 	)
 
 	res, err := client.Embeddings.New(context.Background(), openai.EmbeddingNewParams{
@@ -81,8 +81,8 @@ func getVisionInsight(base64Image, extension string) (string, error) {
 	}
 
 	client := openai.NewClient(
-		option.WithBaseURL("http://192.168.1.235:8080/v1"),
-		option.WithAPIKey("sk-1234567890"),
+		option.WithBaseURL(os.Getenv("MAIN_GPU_URL")),
+		option.WithAPIKey(os.Getenv("OPENAI_API_KEY")),
 	)
 
 	imageURL := fmt.Sprintf("data:%s;base64,%s", mimeType, base64Image)

@@ -265,7 +265,7 @@ func ApiAuthMiddleware(next http.Handler) http.Handler {
 				apiKey = authHeader[7:]
 			}
 
-			if apiKey == os.Getenv("ALICE_API_KEY") {
+			if apiKey == os.Getenv("OPENAI_API_KEY") {
 				next.ServeHTTP(w, r)
 				return
 			}

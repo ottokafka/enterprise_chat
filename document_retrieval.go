@@ -18,6 +18,7 @@ import (
 	"html"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -35,8 +36,8 @@ import (
 
 func getQueryEmbedding(text string) ([]float64, error) {
 	client := openai.NewClient(
-		option.WithBaseURL("http://192.168.1.235:8081/v1"),
-		option.WithAPIKey("sk-1234567890"),
+		option.WithBaseURL(os.Getenv("EMBEDDING_URL")),
+		option.WithAPIKey(os.Getenv("OPENAI_API_KEY")),
 	)
 	res, err := client.Embeddings.New(context.Background(), openai.EmbeddingNewParams{
 		Model: openai.EmbeddingModel("Qwen3-Embedding-8B"),
@@ -286,7 +287,7 @@ func rerankChunks(userQuery string, fusedChunks []RAGChunk, topN int) []RAGChunk
 
 	httpClient := &http.Client{Timeout: 15 * time.Second}
 	resp, err := httpClient.Post(
-		"http://192.168.1.235:8082/v1/rerank",
+		os.Getenv("RERANKER_URL"),
 		"application/json",
 		bytes.NewReader(reqBody),
 	)
@@ -494,8 +495,8 @@ func ragGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	llmClient := openai.NewClient(
-		option.WithBaseURL("http://192.168.1.235:8080/v1"),
-		option.WithAPIKey("sk-1234567890"),
+		option.WithBaseURL(os.Getenv("MAIN_GPU_URL")),
+		option.WithAPIKey(os.Getenv("OPENAI_API_KEY")),
 	)
 
 	log.Printf("[rag] Query: \"%s\"\n", body.Query[:min(len(body.Query), 80)])
