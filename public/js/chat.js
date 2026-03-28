@@ -18,9 +18,14 @@ const ChatApp = (() => {
   // ── DOM Helpers ───────────────────────────────────────────────────────────
   const $ = id => document.getElementById(id);
 
-  function scrollToBottom() {
+  function scrollToBottom(force = false) {
     const log = $('chat-log');
-    if (log) log.scrollTop = log.scrollHeight;
+    if (!log) return;
+    const threshold = 100; // pixels from bottom
+    const isAtBottom = log.scrollHeight - log.scrollTop - log.clientHeight < threshold;
+    if (force || isAtBottom) {
+      log.scrollTop = log.scrollHeight;
+    }
   }
 
   // ── Markdown Rendering ────────────────────────────────────────────────────
@@ -87,7 +92,7 @@ const ChatApp = (() => {
     ).join('');
     // Re-highlight code after render
     if (window.hljs) log.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
-    scrollToBottom();
+    scrollToBottom(true);
     // Async: populate branch nav for each user message
     messages.forEach((msg, i) => { if (msg.role === 'user') updateBranchNav(msg, i); });
   }
@@ -252,7 +257,7 @@ const ChatApp = (() => {
             <div class="msg-content markdown-body" id="streaming-content"><span class="cursor-blink">▋</span></div>
           </div>
         </div>`);
-      scrollToBottom();
+      scrollToBottom(true);
     }
 
     // Build form data for multipart request
@@ -523,7 +528,7 @@ const ChatApp = (() => {
     const newUserMsg = { id: newUserId, role: 'user', content: newContent, parent_id: parentId, timestamp };
     messages = [...prefix, newUserMsg];
     renderMessages();
-    scrollToBottom();
+    scrollToBottom(true);
     // Trigger send for the new edited message
     await _streamFromMessages(newUserId);
   }
@@ -544,7 +549,7 @@ const ChatApp = (() => {
           <div class="msg-content markdown-body" id="streaming-content"><span class="cursor-blink">▋</span></div>
         </div>
       </div>`);
-    scrollToBottom();
+    scrollToBottom(true);
 
     const formData = new FormData();
     const conversation = messages.map(m => ({ role: m.role, content: m.content }));
@@ -674,7 +679,7 @@ const ChatApp = (() => {
     messages = [...prefix, ...suffix];
     currentLeafId = messages[messages.length - 1]?.id ?? null;
     renderMessages();
-    scrollToBottom();
+    scrollToBottom(true);
   }
 
   // Called by branch prev/next buttons via inline onclick
@@ -693,7 +698,7 @@ const ChatApp = (() => {
     messages = [...prefix, ...suffix];
     currentLeafId = messages[messages.length - 1]?.id ?? null;
     renderMessages();
-    scrollToBottom();
+    scrollToBottom(true);
   }
 
   // Async: updates the branch nav indicators for a given user message
