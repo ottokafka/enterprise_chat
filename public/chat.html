@@ -6,10 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Enterprise – Chat</title>
 
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-
   <!-- Markdown + Syntax Highlighting -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
@@ -133,6 +129,26 @@
       background: var(--bg-hover);
       color: var(--text-primary);
       border-color: var(--border-mid);
+    }
+
+    .left-sidebar-close {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      transition: all var(--transition);
+      flex-shrink: 0;
+    }
+
+    .left-sidebar-close:hover {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
     }
 
     .sidebar-body {
@@ -1263,6 +1279,10 @@
        RESPONSIVE
     ════════════════════════════════════════ */
     @media (max-width: 700px) {
+      .left-sidebar-close {
+        display: flex;
+      }
+
       .sidebar {
         position: fixed;
         left: 0;
@@ -1270,6 +1290,8 @@
         bottom: 0;
         z-index: 50;
         transform: translateX(-100%);
+        width: 80vw;
+        max-width: 300px;
       }
 
       .sidebar.open {
@@ -1291,6 +1313,8 @@
 
       .right-sidebar {
         position: fixed;
+        width: 85vw;
+        max-width: 320px;
         box-shadow: -4px 0 24px rgba(0, 0, 0, 0.5);
         z-index: 50;
       }
@@ -1400,14 +1424,40 @@
           </svg>
           Enterprise Chat
         </div>
-        <button class="new-chat-btn" id="new-chat-btn" title="New Chat" aria-label="New Chat">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-        </button>
+        <div style="display: flex; gap: 6px;">
+          <button class="new-chat-btn" id="new-chat-btn" title="New Chat" aria-label="New Chat">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+          <button class="left-sidebar-close" id="left-sidebar-close" aria-label="Close conversation sidebar">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
       </div>
       <div class="sidebar-body">
-        <div class="sidebar-section-label" style="color: white;">Conversations</div>
+        <div class="sidebar-section-label" style="color: white; display: flex; justify-content: space-between; align-items: center;">
+          <span>System Prompt</span>
+          <button id="manage-prompts-sidebar-btn" title="Manage Prompts" style="background:transparent; border:none; color:var(--text-muted); cursor:pointer; display:flex; padding:4px; border-radius: 4px; transition: all var(--transition);" onmouseover="this.style.color='var(--text-primary)'; this.style.background='var(--bg-hover)';" onmouseout="this.style.color='var(--text-muted)'; this.style.background='transparent';">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          </button>
+        </div>
+        <div style="padding: 0 6px 16px; border-bottom: 1px solid var(--border); margin-bottom: 8px;">
+          <div class="custom-select-wrapper" style="position: relative;">
+            <button id="sidebar-system-prompt-btn" style="width: 100%; display: flex; justify-content: space-between; align-items: center; background: var(--bg-card); border: 1px solid var(--border-mid); color: var(--text-primary); padding: 8px 10px; border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; text-align: left; transition: all var(--transition);" onmouseover="this.style.borderColor='var(--text-muted)'" onmouseout="this.style.borderColor='var(--border-mid)'">
+              <span id="sidebar-system-prompt-label" style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px;">None (Default)</span>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <div id="sidebar-system-prompt-menu" style="display: none; position: absolute; top: calc(100% + 6px); left: 0; right: 0; background: var(--bg-surface); border: 1px solid var(--border-mid); border-radius: var(--radius-sm); z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.5); max-height: 200px; overflow-y: auto;">
+              <!-- Options injected here -->
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar-section-label" style="color: white; padding: 0 6px 4px;">Conversations</div>
         <div id="conversation-list"></div>
       </div>
       <div class="sidebar-footer" id="sidebar-footer"></div>
@@ -1468,36 +1518,6 @@
           <input type="file" id="file-input" multiple accept="image/*,.pdf,.csv,.docx,.xlsx,.txt,.md"
             style="display:none" aria-label="File input">
 
-          <!-- System Prompt Selector -->
-          <div class="system-prompt-container" style="position: relative;">
-            <button class="input-icon-btn" id="system-prompt-btn" title="System Prompt" aria-label="System Prompt">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                <path
-                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z" />
-              </svg>
-            </button>
-            <div id="system-prompt-menu"
-              style="display: none; position: absolute; bottom: 100%; left: 0; background: var(--bg-surface); border: 1px solid var(--border-mid); border-radius: var(--radius-md); padding: 8px; width: 220px; box-shadow: 0 -10px 25px rgba(0,0,0,0.5); z-index: 60; margin-bottom: 8px;">
-              <div
-                style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; padding: 4px 8px;">
-                Select System Prompt</div>
-              <div id="system-prompt-list" style="max-height: 200px; overflow-y: auto;">
-                <div class="prompt-option active" data-id="none"
-                  style="padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--text-primary);">
-                  None (Default)</div>
-              </div>
-              <div style="border-top: 1px solid var(--border); margin: 4px 0; padding-top: 4px;">
-                <div id="manage-prompts-btn"
-                  style="padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--accent); display: flex; align-items: center; gap: 6px;">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 5v14M5 12h14" />
-                  </svg>
-                  Manage Prompts
-                </div>
-              </div>
-            </div>
-          </div>
-
           <!-- Text input -->
           <textarea id="chat-input" placeholder="Message..." rows="1" aria-label="Chat message input"></textarea>
 
@@ -1516,7 +1536,7 @@
     </main>
 
     <!-- ══ Right Sidebar ══════════════════════════════════ -->
-    <aside class="right-sidebar open" id="right-sidebar" aria-label="Document Uploads">
+    <aside class="right-sidebar" id="right-sidebar" aria-label="Document Uploads">
       <div class="right-sidebar-header">
         <div class="sidebar-logo">Knowledge Base</div>
         <button class="right-sidebar-close" id="right-sidebar-close"

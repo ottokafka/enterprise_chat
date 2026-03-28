@@ -258,7 +258,7 @@ const ChatApp = (() => {
     // Build form data for multipart request
     const formData = new FormData();
     const conversation = messages.slice(0, -1).map(m => ({ role: m.role, content: m.content }));
-    
+
     // Prepend system prompt if selected
     if (selectedSystemPromptId !== 'none') {
       const selected = systemPrompts.find(p => p.id == selectedSystemPromptId);
@@ -266,7 +266,7 @@ const ChatApp = (() => {
         conversation.unshift({ role: 'system', content: selected.content });
       }
     }
-    
+
     conversation.push({ role: 'user', content: text || ' ' });
     formData.append('messages', JSON.stringify(conversation));
     formData.append('stream', 'true');
@@ -548,7 +548,7 @@ const ChatApp = (() => {
 
     const formData = new FormData();
     const conversation = messages.map(m => ({ role: m.role, content: m.content }));
-    
+
     // Prepend system prompt if selected
     if (selectedSystemPromptId !== 'none') {
       const selected = systemPrompts.find(p => p.id == selectedSystemPromptId);
@@ -556,7 +556,7 @@ const ChatApp = (() => {
         conversation.unshift({ role: 'system', content: selected.content });
       }
     }
-    
+
     formData.append('messages', JSON.stringify(conversation));
     formData.append('stream', 'true');
 
@@ -834,10 +834,6 @@ const ChatApp = (() => {
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
               Developer
             </a>
-            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; color: var(--text-primary); cursor: pointer; font-size: 13px; border-radius: 6px; transition: background 0.15s;" onmouseover="this.style.background='var(--bg-hover)'" onmouseout="this.style.background='transparent'" onclick="ChatApp.openPromptsManager()">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
-              System Prompts
-            </div>
             <a href="/logout" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; color: #ef4444; text-decoration: none; font-size: 13px; border-radius: 6px; transition: background 0.15s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.15)'" onmouseout="this.style.background='transparent'">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
               Sign Out
@@ -862,6 +858,7 @@ const ChatApp = (() => {
     setupInputListeners();
     setupPasteListener();
     setupSidebarToggle();
+    setupSidebarClickOutside();
     initIngestionUI();
     initSystemPromptUI();
   }
@@ -934,6 +931,32 @@ const ChatApp = (() => {
     $('sidebar-toggle')?.addEventListener('click', () => {
       document.querySelector('.sidebar')?.classList.toggle('open');
     });
+    $('left-sidebar-close')?.addEventListener('click', () => {
+      document.querySelector('.sidebar')?.classList.remove('open');
+    });
+  }
+
+  function setupSidebarClickOutside() {
+    document.addEventListener('click', (e) => {
+      if (window.innerWidth > 700) return;
+
+      const sidebar = document.querySelector('.sidebar');
+      const rightSidebar = document.querySelector('.right-sidebar');
+      const leftToggle = $('sidebar-toggle');
+      const rightToggle = $('right-sidebar-toggle');
+
+      // 1. Handle left sidebar
+      if (sidebar && sidebar.classList.contains('open')) {
+        const isOutside = !sidebar.contains(e.target) && (!leftToggle || !leftToggle.contains(e.target));
+        if (isOutside) sidebar.classList.remove('open');
+      }
+
+      // 2. Handle right sidebar
+      if (rightSidebar && rightSidebar.classList.contains('open')) {
+        const isOutside = !rightSidebar.contains(e.target) && (!rightToggle || !rightToggle.contains(e.target));
+        if (isOutside) rightSidebar.classList.remove('open');
+      }
+    });
   }
 
   // ── Document Ingestion ───────────────────────────────────────────────────
@@ -944,7 +967,9 @@ const ChatApp = (() => {
     const fileInput = $('rag-file-input');
 
     if (toggleBtn && rightSidebar) {
-      rightSidebar.classList.add('open');
+      if (window.innerWidth > 700) {
+        rightSidebar.classList.add('open');
+      }
       toggleBtn.addEventListener('click', () => rightSidebar.classList.toggle('open'));
     }
     if (closeBtn && rightSidebar) {
@@ -964,16 +989,25 @@ const ChatApp = (() => {
   }
 
   function initSystemPromptUI() {
-    $('system-prompt-btn')?.addEventListener('click', (e) => {
+    $('sidebar-system-prompt-btn')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      const menu = $('system-prompt-menu');
-      if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+      const menu = $('sidebar-system-prompt-menu');
+      if (menu) {
+        const isHidden = menu.style.display === 'none';
+        document.querySelectorAll('.user-dropdown').forEach(d => d.style.display = 'none');
+        menu.style.display = isHidden ? 'block' : 'none';
+      }
     });
 
-    $('system-prompt-menu')?.addEventListener('click', (e) => e.stopPropagation());
+    document.addEventListener('click', () => {
+      const menu = $('sidebar-system-prompt-menu');
+      if (menu) menu.style.display = 'none';
+    });
 
-    $('manage-prompts-btn')?.addEventListener('click', () => {
-      const menu = $('system-prompt-menu');
+    $('sidebar-system-prompt-menu')?.addEventListener('click', (e) => e.stopPropagation());
+
+    $('manage-prompts-sidebar-btn')?.addEventListener('click', () => {
+      const menu = $('sidebar-system-prompt-menu');
       if (menu) menu.style.display = 'none';
       openPromptsManager();
     });
@@ -1011,42 +1045,44 @@ const ChatApp = (() => {
   }
 
   function renderSystemPromptOptions() {
-    const list = $('system-prompt-list');
+    const list = $('sidebar-system-prompt-menu');
     if (!list) return;
 
     let html = `
       <div class="prompt-option ${selectedSystemPromptId === 'none' ? 'active' : ''}" 
-           data-id="none" onclick="ChatApp.selectSystemPrompt('none')">
-        <span>None (Default)</span>
+           data-id="none" onclick="ChatApp.selectSystemPrompt('none')"
+           style="padding: 8px 12px; font-size: 13px; color: var(--text-primary); cursor: pointer; transition: background 0.15s;"
+           onmouseover="this.style.background='var(--bg-hover)'" onmouseout="this.style.background='transparent'">
+        None (Default)
       </div>`;
 
     systemPrompts.forEach(p => {
       html += `
         <div class="prompt-option ${selectedSystemPromptId == p.id ? 'active' : ''}" 
-             data-id="${p.id}" onclick="ChatApp.selectSystemPrompt(${p.id})">
-          <span>${escapeHtml(p.name)}</span>
+             data-id="${p.id}" onclick="ChatApp.selectSystemPrompt(${p.id})"
+             style="padding: 8px 12px; font-size: 13px; color: var(--text-primary); cursor: pointer; transition: background 0.15s;"
+             onmouseover="this.style.background='var(--bg-hover)'" onmouseout="this.style.background='transparent'">
+          ${escapeHtml(p.name)}
         </div>`;
     });
     list.innerHTML = html;
+
+    const label = $('sidebar-system-prompt-label');
+    if (label) {
+      if (selectedSystemPromptId === 'none') {
+        label.textContent = 'None (Default)';
+      } else {
+        const p = systemPrompts.find(x => x.id == selectedSystemPromptId);
+        label.textContent = p ? p.name : 'None (Default)';
+      }
+    }
   }
 
   function selectSystemPrompt(id) {
     selectedSystemPromptId = id;
     renderSystemPromptOptions();
-    const menu = $('system-prompt-menu');
+    const menu = $('sidebar-system-prompt-menu');
     if (menu) menu.style.display = 'none';
-
-    // Update button color if prompt is active
-    const btn = $('system-prompt-btn');
-    if (btn) {
-      if (id !== 'none') {
-        btn.style.color = 'var(--accent)';
-        btn.style.borderColor = 'var(--accent)';
-      } else {
-        btn.style.color = '';
-        btn.style.borderColor = '';
-      }
-    }
   }
 
   function openPromptsManager() {
@@ -1347,7 +1383,7 @@ const ChatApp = (() => {
 
     await fetchAllUsers();
     renderShareUsers(sharedWithIds || []);
-    
+
     // UI logic for toggling global vs specific
     const toggleGlobal = () => {
       const isG = $('share-global-flag').checked;
@@ -1373,10 +1409,10 @@ const ChatApp = (() => {
     const query = $('share-search-input').value.toLowerCase();
     const list = $('share-users-list');
     const isG = $('share-global-flag').checked;
-    
+
     let html = '';
     const filtered = allUsers.filter(u => u.name.toLowerCase().includes(query) || (u.job_title && u.job_title.toLowerCase().includes(query)));
-    
+
     if (filtered.length === 0) {
       list.innerHTML = '<div style="font-size: 12px; color: var(--text-muted);">No users found.</div>';
       return;
@@ -1407,7 +1443,7 @@ const ChatApp = (() => {
     if (!currentShareDocId) return;
     const isGlobal = $('share-global-flag').checked;
     const sharedIds = getCheckedUsers();
-    
+
     try {
       const res = await fetch(`/v1/documents/${currentShareDocId}/share`, {
         method: 'POST',
@@ -1478,10 +1514,10 @@ const ChatApp = (() => {
 
     title.textContent = `Snapshot: ${name}`;
     content.innerHTML = `<div hx-ext="sse" sse-connect="/v1/documents/${id}/snapshot" sse-swap="chunk" sse-close="close" hx-swap="beforeend"></div>`;
-    
+
     // Activate HTMX inside the content div
     htmx.process(content);
-    
+
     modal.classList.add('open');
   }
 
