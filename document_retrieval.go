@@ -265,7 +265,69 @@ type rerankerResult struct {
 }
 
 type rerankerResponse struct {
+	Model   string           `json:"model"`
+	Object  string           `json:"object"`
+	Usage   map[string]int   `json:"usage"`
 	Results []rerankerResult `json:"results"`
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @route  POST /v1/rerank
+// @desc   Proxy rerank request to upstream reranker service
+// @access Private (apiAuth)
+// ─────────────────────────────────────────────────────────────────────────────
+func rerankHandler(w http.ResponseWriter, r *http.Request) {
+	var body rerankerRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if body.Query == "" || len(body.Documents) == 0 {
+		http.Error(w, `{"error":"'query' and 'documents' are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	reqBody, _ := json.Marshal(body)
+
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	resp, err := httpClient.Post(
+		os.Getenv("RERANKER_URL"),
+		"application/json",
+		bytes.NewReader(reqBody),
+	)
+	if err != nil {
+		log.Printf("[reranker] Handler error: %v\n", err)
+		http.Error(w, `{"error":"Upstream reranker unavailable"}`, http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Forward the upstream response status
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+
+	// Since we might want to ensure the response matches the exactly expected format
+	// and potentially provide defaults if the upstream is slightly different,
+	// we'll decode and re-encode. But for efficiency, if we trust the upstream,
+	// we could just io.Copy. Given the user's request, let's decode to be safe
+	// and ensure fields like "object": "list" are present if missing.
+	var reranked rerankerResponse
+	if err := json.NewDecoder(resp.Body).Decode(&reranked); err != nil {
+		log.Printf("[reranker] Decode error: %v\n", err)
+		http.Error(w, `{"error":"Failed to decode upstream reranker response"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Ensure essential fields for the user's expected format
+	if reranked.Object == "" {
+		reranked.Object = "list"
+	}
+	if reranked.Model == "" {
+		reranked.Model = body.Model
+	}
+
+	json.NewEncoder(w).Encode(reranked)
 }
 
 func rerankChunks(userQuery string, fusedChunks []RAGChunk, topN int) []RAGChunk {
