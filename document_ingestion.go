@@ -410,6 +410,44 @@ func processPdf(data []byte, documentName string, userId, documentId uint32, onP
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// processText — Plain text / Markdown / CSV processor
+// ─────────────────────────────────────────────────────────────────────────────
+
+func processText(data []byte, documentName string, userId, documentId uint32, onProgress ProgressFn) ([]EmbeddingRecord, error) {
+	var records []EmbeddingRecord
+
+	onProgress("Extracting text...", 0, 100)
+	log.Printf("[text] Extracting text: %s\n", documentName)
+	rawText := string(data)
+
+	chunks := chunkTextWithOverlap(rawText, 150, 30)
+	log.Printf("[text] %d text chunks\n", len(chunks))
+
+	for i, chunk := range chunks {
+		onProgress("Embedding text chunks...", i, len(chunks))
+		log.Printf("[text] Processing chunk: %d out of %d\n", i, len(chunks))
+		embedding, err := getEmbedding(chunk)
+		if err != nil {
+			log.Printf("[text] embedding error chunk %d: %v\n", i, err)
+			continue
+		}
+		records = append(records, EmbeddingRecord{
+			UserID:       userId,
+			DocumentID:   documentId,
+			DocumentName: documentName,
+			ChunkType:    "text",
+			Content:      chunk,
+			ChunkIndex:   i,
+			Embedding:    embedding,
+		})
+	}
+
+	onProgress("Finalizing...", 100, 100)
+	log.Printf("[text] Done. %d records\n", len(records))
+	return records, nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Processor registry — add new types here only
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -418,11 +456,17 @@ type ProcessorFn func(data []byte, documentName string, userId, documentId uint3
 var processors = map[string]ProcessorFn{
 	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": processDocx,
 	"application/pdf": processPdf,
+	"text/plain":      processText,
+	"text/markdown":   processText,
+	"text/csv":        processText,
 }
 
 var extToMime = map[string]string{
 	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 	".pdf":  "application/pdf",
+	".txt":  "text/plain",
+	".md":   "text/markdown",
+	".csv":  "text/csv",
 }
 
 func resolveContentType(contentType, filename string) string {
