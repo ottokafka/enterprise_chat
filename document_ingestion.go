@@ -303,8 +303,6 @@ func processDocx(data []byte, documentName string, userId, documentId uint32, on
 // PDF processor — replaces ImageMagick (convert) using dslipak/pdf and pdfcpu
 // ─────────────────────────────────────────────────────────────────────────────
 
-const maxPDFPages = 50
-
 func processPdf(data []byte, documentName string, userId, documentId uint32, onProgress ProgressFn) ([]EmbeddingRecord, error) {
 	var records []EmbeddingRecord
 
@@ -340,9 +338,6 @@ func processPdf(data []byte, documentName string, userId, documentId uint32, onP
 	}
 
 	numPages := contentReader.NumPage()
-	if numPages > maxPDFPages {
-		numPages = maxPDFPages
-	}
 
 	for i := 1; i <= numPages; i++ {
 		onProgress(fmt.Sprintf("Processing page %d/%d...", i, numPages), i, numPages)
@@ -613,7 +608,7 @@ func insertEmbeddings(records []EmbeddingRecord) error {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func ingestDocument(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(512 << 20); err != nil { // 512 MB limit
+	if err := r.ParseMultipartForm(MaxUploadBytes); err != nil { // Use MaxUploadBytes
 		http.Error(w, `{"error":"Failed to parse multipart form"}`, http.StatusBadRequest)
 		return
 	}

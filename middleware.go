@@ -56,12 +56,12 @@ func GlobalMiddleware(next http.Handler) http.Handler {
 // but allowing for large file uploads.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const maxUploadBytes = 512 << 20 // 512 MB
+const MaxUploadBytes = 2048 << 20 // 2GB
 
 // UploadMiddleware enforces the max request body size for file upload routes.
 func UploadMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+		r.Body = http.MaxBytesReader(w, r.Body, MaxUploadBytes)
 		next.ServeHTTP(w, r)
 	})
 }

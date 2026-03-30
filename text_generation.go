@@ -274,26 +274,19 @@ func processIncomingFile(filename, contentType string, data []byte) ([]processed
 
 	switch mime {
 	case "image/jpeg", "image/png", "image/webp", "image/gif":
-		resized, err := resizeImage(data, 1568)
-		if err != nil {
-			log.Printf("[file] Resize error for %s: %v\n", filename, err)
-			return []processedFile{{fileType: "text", text: fmt.Sprintf("Error reading file %s", filename)}}, nil
-		}
-		return []processedFile{{fileType: "image", data: resized, mime: "image/jpeg"}}, nil
+		// No resizing — send raw image data
+		return []processedFile{{fileType: "image", data: data, mime: mime}}, nil
 
 	case "image/heic":
 		jpgData, err := convertHEIC(data)
 		if err != nil {
 			return []processedFile{{fileType: "text", text: fmt.Sprintf("Error processing HEIC file %s", filename)}}, nil
 		}
-		resized, err := resizeImage(jpgData, 1568)
-		if err != nil {
-			return []processedFile{{fileType: "image", data: jpgData, mime: "image/jpeg"}}, nil
-		}
-		return []processedFile{{fileType: "image", data: resized, mime: "image/jpeg"}}, nil
+		// No resizing — send converted JPEG directly
+		return []processedFile{{fileType: "image", data: jpgData, mime: "image/jpeg"}}, nil
 
 	case "application/pdf":
-		pages, err := pdfToImages(data, 50)
+		pages, err := pdfToImages(data, 9999) // Lifted from 50
 		if err != nil {
 			log.Printf("[file] PDF conversion error: %v\n", err)
 			return []processedFile{{fileType: "text", text: "Failed to read PDF pages."}}, nil
@@ -336,7 +329,7 @@ func processIncomingFile(filename, contentType string, data []byte) ([]processed
 
 func llamaChat(w http.ResponseWriter, r *http.Request) {
 	// Parse the multipart form — multer sends files + JSON fields
-	if err := r.ParseMultipartForm(512 << 20); err != nil {
+	if err := r.ParseMultipartForm(MaxUploadBytes); err != nil {
 		// Not multipart — try JSON body
 		r.Body = io.NopCloser(r.Body)
 	}
