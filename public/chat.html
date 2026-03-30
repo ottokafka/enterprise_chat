@@ -712,6 +712,58 @@
       color: #ef4444;
     }
 
+    .image-preview-chip {
+      position: relative;
+      display: inline-block;
+      width: 60px;
+      height: 60px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-mid);
+      overflow: hidden;
+      background: var(--bg-surface);
+      flex-shrink: 0;
+    }
+
+    .image-preview-chip img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      cursor: pointer;
+      display: block;
+      transition: opacity var(--transition);
+    }
+    
+    .image-preview-chip img:hover {
+      opacity: 0.8;
+    }
+
+    .image-preview-chip .remove-btn {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 18px;
+      height: 18px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+      opacity: 0;
+      transition: opacity var(--transition), background var(--transition);
+    }
+    
+    .image-preview-chip:hover .remove-btn {
+      opacity: 1;
+    }
+
+    .image-preview-chip .remove-btn:hover {
+      background: #ef4444;
+    }
+
     #stop-btn {
       display: none;
       align-items: center;
@@ -1406,6 +1458,37 @@
       color: #ef4444;
       background: rgba(239, 68, 68, 0.1);
     }
+    .chat-attached-image {
+      max-width: 200px;
+      max-height: 200px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      margin-top: 8px;
+      object-fit: cover;
+      border: 1px solid var(--border-mid);
+    }
+
+    /* ── Image Modal ──────────────────────── */
+    .image-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.85);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+      cursor: zoom-out;
+    }
+    .image-modal.open {
+      display: flex;
+    }
+    .image-modal-content {
+      max-width: 90vw;
+      max-height: 90vh;
+      border-radius: var(--radius-sm);
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+      object-fit: contain;
+    }
   </style>
 
 </head>
@@ -1665,6 +1748,11 @@
         <button class="btn-secondary" id="prompts-modal-close">Close</button>
       </div>
     </div>
+  </div>
+
+  <!-- ══ Image Modal ══════════════════════════════════ -->
+  <div id="image-modal" class="image-modal" onclick="this.classList.remove('open')" role="dialog" aria-modal="true" aria-label="Enlarged image">
+    <img id="image-modal-content" class="image-modal-content" alt="Enlarged pasted image" />
   </div>
 
   <!-- Scripts -->

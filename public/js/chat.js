@@ -99,10 +99,21 @@ const ChatApp = (() => {
 
   function buildUserCard(msg, index) {
     const msgId = msg.id || 'u' + index;
+    let attachmentsHtml = '';
+    if (msg.attachments && msg.attachments.length > 0) {
+      const imagesHtml = msg.attachments
+        .filter(a => a.dataUrl)
+        .map(a => `<img src="${a.dataUrl}" class="chat-attached-image" onclick="ChatApp.openImageModal(this.src)" alt="${escapeHtml(a.name)}" />`)
+        .join('');
+      if (imagesHtml) {
+         attachmentsHtml = `<div class="msg-attachments" style="display: flex; gap: 8px; flex-wrap: wrap;">${imagesHtml}</div>`;
+      }
+    }
     return `
       <div class="msg-wrapper msg-user" data-index="${index}" id="msg-${msgId}">
         <div class="msg-bubble user-bubble">
           <div class="msg-content">${escapeHtml(msg.content)}</div>
+          ${attachmentsHtml}
         </div>
         <div class="msg-actions" id="msg-actions-${msgId}">
           <div class="branch-nav" id="branch-nav-${msgId}" style="visibility:hidden">
@@ -228,12 +239,18 @@ const ChatApp = (() => {
       displayContent = text ? `${text}\n\n[Attached: ${names}]` : `[Attached: ${names}]`;
     }
 
+    const attachments = attachedFiles.map(af => ({
+      name: af.file.name,
+      type: af.file.type,
+      dataUrl: af.dataUrl
+    }));
+
     // Save user message to IndexedDB
     const userId = await IndexedDBService.saveChat(
-      currentConversationId, 'user', displayContent, parentId, timestamp
+      currentConversationId, 'user', displayContent, parentId, timestamp, attachments
     );
 
-    const userMsg = { id: userId, role: 'user', content: displayContent, parent_id: parentId, timestamp };
+    const userMsg = { id: userId, role: 'user', content: displayContent, attachments: attachments, parent_id: parentId, timestamp };
     messages.push(userMsg);
 
     // Render user message + streaming placeholder
@@ -387,7 +404,7 @@ const ChatApp = (() => {
       const duration = hasReasoning ? formatDuration(Date.now() - reasoningStart) : null;
       const assistTimestamp = new Date().toISOString();
       const assistId = await IndexedDBService.saveChat(
-        currentConversationId, 'assistant', contentBuffer, userId, assistTimestamp
+        currentConversationId, 'assistant', contentBuffer, userId, assistTimestamp, []
       );
 
       const assistMsg = {
@@ -519,13 +536,14 @@ const ChatApp = (() => {
 
   async function performEditMessage(index, newContent) {
     if (!currentConversationId || isStreaming) return;
+    const oldMsg = messages[index];
     const parentId = index === 0 ? null : messages[index - 1].id;
     const timestamp = new Date().toISOString();
     const newUserId = await IndexedDBService.saveChat(
-      currentConversationId, 'user', newContent, parentId, timestamp
+      currentConversationId, 'user', newContent, parentId, timestamp, oldMsg.attachments
     );
     const prefix = messages.slice(0, index);
-    const newUserMsg = { id: newUserId, role: 'user', content: newContent, parent_id: parentId, timestamp };
+    const newUserMsg = { id: newUserId, role: 'user', content: newContent, attachments: oldMsg.attachments, parent_id: parentId, timestamp };
     messages = [...prefix, newUserMsg];
     renderMessages();
     scrollToBottom(true);
@@ -650,7 +668,7 @@ const ChatApp = (() => {
       const duration = hasReasoning ? formatDuration(Date.now() - reasoningStart) : null;
       const assistTimestamp = new Date().toISOString();
       const assistId = await IndexedDBService.saveChat(
-        currentConversationId, 'assistant', contentBuffer, newUserId, assistTimestamp
+        currentConversationId, 'assistant', contentBuffer, newUserId, assistTimestamp, []
       );
       const assistMsg = { id: assistId, role: 'assistant', content: contentBuffer, reasoning: reasoningBuffer, reasoningDuration: duration, parent_id: newUserId, timestamp: assistTimestamp };
       messages.push(assistMsg);
@@ -739,9 +757,26 @@ const ChatApp = (() => {
   }
 
   // ── File Attachments ─────────────────────────────────────────────────────
-  function addFiles(fileList) {
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = error => reject(error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function addFiles(fileList) {
     for (const file of fileList) {
-      attachedFiles.push({ file });
+      let dataUrl = null;
+      if (file.type.startsWith('image/')) {
+        try {
+          dataUrl = await fileToBase64(file);
+        } catch (err) {
+          console.error('Failed to read file as data url', err);
+        }
+      }
+      attachedFiles.push({ file, dataUrl });
     }
     renderFileChips();
   }
@@ -762,12 +797,23 @@ const ChatApp = (() => {
     const row = $('file-chips');
     if (!row) return;
     if (attachedFiles.length === 0) { row.innerHTML = ''; return; }
-    row.innerHTML = attachedFiles.map((f, i) => `
-      <div class="file-chip">
-        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-        <span>${escapeHtml(f.file.name)}</span>
-        <button onclick="ChatApp.removeFile(${i})" aria-label="Remove file">&times;</button>
-      </div>`).join('');
+    row.innerHTML = attachedFiles.map((f, i) => {
+      if (f.dataUrl) {
+        return `
+          <div class="image-preview-chip">
+            <img src="${f.dataUrl}" onclick="ChatApp.openImageModal(this.src)" alt="${escapeHtml(f.file.name)}" />
+            <button class="remove-btn" onclick="ChatApp.removeFile(${i})" title="Remove">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          </div>`;
+      }
+      return `
+        <div class="file-chip">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+          <span>${escapeHtml(f.file.name)}</span>
+          <button onclick="ChatApp.removeFile(${i})" aria-label="Remove file">&times;</button>
+        </div>`;
+    }).join('');
   }
 
   // ── Utilities ─────────────────────────────────────────────────────────────
@@ -800,6 +846,15 @@ const ChatApp = (() => {
     body.classList.toggle('collapsed', isOpen);
     container.classList.toggle('expanded', !isOpen);
     btn.querySelector('.chevron')?.style && (btn.querySelector('.chevron').style.transform = isOpen ? '' : 'rotate(180deg)');
+  }
+
+  function openImageModal(src) {
+    const modal = $('image-modal');
+    const content = $('image-modal-content');
+    if (modal && content) {
+      content.src = src;
+      modal.classList.add('open');
+    }
   }
 
   // ── User Profile ──────────────────────────────────────────────────────────
@@ -901,7 +956,7 @@ const ChatApp = (() => {
     });
 
     fileBtn?.addEventListener('click', () => fileInput?.click());
-    fileInput?.addEventListener('change', e => addFiles(e.target.files));
+    fileInput?.addEventListener('change', async e => await addFiles(e.target.files));
 
     // Edit modal
     $('edit-confirm')?.addEventListener('click', () => confirmEdit());
@@ -919,15 +974,20 @@ const ChatApp = (() => {
 
   function setupPasteListener() {
     const input = $('chat-input');
-    input?.addEventListener('paste', e => {
+    input?.addEventListener('paste', async e => {
       const items = e.clipboardData?.items;
       if (!items) return;
+      
+      const filesToAdd = [];
       for (const item of items) {
         if (item.type.startsWith('image/')) {
           e.preventDefault();
           const file = item.getAsFile();
-          if (file) addFiles([file]);
+          if (file) filesToAdd.push(file);
         }
+      }
+      if (filesToAdd.length > 0) {
+        await addFiles(filesToAdd);
       }
     });
   }
@@ -1550,6 +1610,7 @@ const ChatApp = (() => {
     editPromptUI,
     deletePromptUI,
     viewDocumentSnapshot,
+    openImageModal,
   };
 })();
 

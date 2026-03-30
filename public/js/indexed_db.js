@@ -109,13 +109,14 @@ const IndexedDBService = (() => {
 
   // ── Chat Methods ───────────────────────────────────────────────────
 
-  async function saveChat(conversationId, role, content, parentId, timestamp) {
+  async function saveChat(conversationId, role, content, parentId, timestamp, attachments) {
     const { store } = await _tx(STORE_CHATS, 'readwrite');
     return _req(store.add({
       conversation_id: conversationId,
       parent_id: parentId ?? null,
       role,
       content,
+      attachments: attachments ?? [],
       timestamp: timestamp ?? new Date().toISOString(),
     }));
   }
