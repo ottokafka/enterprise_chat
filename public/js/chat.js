@@ -292,7 +292,10 @@ const ChatApp = (() => {
     conversation.push({ role: 'user', content: text || ' ' });
     formData.append('messages', JSON.stringify(conversation));
     formData.append('stream', 'true');
-    attachedFiles.forEach(({ file }) => formData.append('files', file, file.name));
+    attachedFiles.forEach(({ file }, i) => {
+      const fileName = file.name || `attachment_${i}.${file.type.split('/')[1] || 'bin'}`;
+      formData.append('files', file, fileName);
+    });
 
     // Clear file attachments
     clearFileAttachments();
