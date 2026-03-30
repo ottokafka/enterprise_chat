@@ -111,6 +111,7 @@ func getMicrosoftProfile(accessToken string) string {
 		JobTitle string `json:"jobTitle"`
 	}
 	json.NewDecoder(resp.Body).Decode(&data)
+
 	return data.JobTitle
 }
 
@@ -137,7 +138,7 @@ func RedirectHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	email := result.Account.PreferredUsername
-	name := result.Account.Name
+	name := result.IDToken.Name
 	jobTitle := getMicrosoftProfile(result.AccessToken)
 
 	user, err := createUserIfNotExist(User{
