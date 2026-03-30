@@ -292,10 +292,7 @@ const ChatApp = (() => {
     conversation.push({ role: 'user', content: text || ' ' });
     formData.append('messages', JSON.stringify(conversation));
     formData.append('stream', 'true');
-    attachedFiles.forEach(({ file }, i) => {
-      const fileName = file.name || `attachment_${i}.${file.type.split('/')[1] || 'bin'}`;
-      formData.append('files', file, fileName);
-    });
+    attachedFiles.forEach(({ file }) => formData.append('files', file, file.name));
 
     // Clear file attachments
     clearFileAttachments();
@@ -770,9 +767,29 @@ const ChatApp = (() => {
   }
 
   async function addFiles(fileList) {
-    for (const file of fileList) {
+    for (let file of fileList) {
       let dataUrl = null;
       if (file.type.startsWith('image/')) {
+        if (window.Compressor) {
+          try {
+            file = await new Promise((resolve) => {
+              new Compressor(file, {
+                quality: 0.6,
+                maxWidth: 1600,
+                success(result) {
+                  console.log(`Cloudflare Bypass: Reduced to ${(result.size / 1024).toFixed(2)}KB`);
+                  resolve(new File([result], file.name || 'image.jpg', { type: result.type }));
+                },
+                error(err) {
+                  console.error('Compression failed:', err.message);
+                  resolve(file);
+                },
+              });
+            });
+          } catch (e) {
+            console.error('Compressor err', e);
+          }
+        }
         try {
           dataUrl = await fileToBase64(file);
         } catch (err) {
