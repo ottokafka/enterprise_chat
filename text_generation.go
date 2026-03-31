@@ -70,6 +70,8 @@ func resolveMimeType(filename, contentType string) string {
 		return "text/csv"
 	case ".docx":
 		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case ".doc":
+		return "application/msword"
 	case ".txt", ".md":
 		return "text/plain"
 	default:
@@ -309,6 +311,19 @@ func processIncomingFile(filename, contentType string, data []byte) ([]processed
 		text, err := extractDocxText(data)
 		if err != nil {
 			return []processedFile{{fileType: "text", text: fmt.Sprintf("Error reading %s", filename)}}, nil
+		}
+		return []processedFile{{fileType: "text", text: text}}, nil
+
+	case "application/msword":
+		// Word 97-2003 binary (.doc) — use the custom CFB extractor
+		cfb, cleanup, err := openCFBFromBytes(data)
+		if err != nil {
+			return []processedFile{{fileType: "text", text: fmt.Sprintf("Error opening .doc file %s: %v", filename, err)}}, nil
+		}
+		defer cleanup()
+		text, err := extractText(cfb)
+		if err != nil || text == "" {
+			return []processedFile{{fileType: "text", text: fmt.Sprintf("Could not extract text from %s", filename)}}, nil
 		}
 		return []processedFile{{fileType: "text", text: text}}, nil
 

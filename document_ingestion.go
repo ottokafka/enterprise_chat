@@ -443,6 +443,89 @@ func processText(data []byte, documentName string, userId, documentId uint32, on
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// processDoc — Word 97-2003 binary (.doc) processor via custom CFB extractor
+// ─────────────────────────────────────────────────────────────────────────────
+
+func processDoc(data []byte, documentName string, userId, documentId uint32, onProgress ProgressFn) ([]EmbeddingRecord, error) {
+	var records []EmbeddingRecord
+
+	cfb, cleanup, err := openCFBFromBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("[doc] failed to open CFB: %w", err)
+	}
+	defer cleanup()
+
+	// ── Text ──────────────────────────────────────────────────────────────────
+	onProgress("Extracting text...", 0, 100)
+	log.Printf("[doc] Extracting text: %s\n", documentName)
+	rawText, err := extractText(cfb)
+	if err != nil {
+		log.Printf("[doc] text extraction warning: %v\n", err)
+	}
+
+	if rawText != "" {
+		chunks := chunkTextWithOverlap(rawText, 150, 30)
+		log.Printf("[doc] %d text chunks\n", len(chunks))
+		for i, chunk := range chunks {
+			onProgress("Embedding text chunks...", i, len(chunks))
+			embedding, err := getEmbedding(chunk)
+			if err != nil {
+				log.Printf("[doc] embedding error chunk %d: %v\n", i, err)
+				continue
+			}
+			records = append(records, EmbeddingRecord{
+				UserID:       userId,
+				DocumentID:   documentId,
+				DocumentName: documentName,
+				ChunkType:    "text",
+				Content:      chunk,
+				ChunkIndex:   i,
+				Embedding:    embedding,
+			})
+		}
+	}
+
+	// ── Images ────────────────────────────────────────────────────────────────
+	onProgress("Extracting images...", 0, 100)
+	log.Printf("[doc] Extracting images: %s\n", documentName)
+	images, err := extractImages(cfb)
+	if err != nil {
+		log.Printf("[doc] image extraction warning: %v\n", err)
+	}
+
+	for idx, img := range images {
+		onProgress(fmt.Sprintf("Analyzing image %d/%d...", idx+1, len(images)), idx, len(images))
+		if len(img.data) == 0 {
+			continue
+		}
+		b64 := base64.StdEncoding.EncodeToString(img.data)
+		insightText, err := getVisionInsight(b64, img.ext)
+		if err != nil || insightText == "" {
+			log.Printf("[doc] vision error for image %d: %v\n", img.index, err)
+			continue
+		}
+		embedding, err := getEmbedding(insightText)
+		if err != nil {
+			log.Printf("[doc] embedding error for image %d: %v\n", img.index, err)
+			continue
+		}
+		records = append(records, EmbeddingRecord{
+			UserID:       userId,
+			DocumentID:   documentId,
+			DocumentName: documentName,
+			ChunkType:    "image_insight",
+			Content:      fmt.Sprintf("[Image Insight]: %s", insightText),
+			ChunkIndex:   idx,
+			Embedding:    embedding,
+		})
+	}
+
+	onProgress("Finalizing...", 100, 100)
+	log.Printf("[doc] Done. %d records\n", len(records))
+	return records, nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Processor registry — add new types here only
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -450,14 +533,16 @@ type ProcessorFn func(data []byte, documentName string, userId, documentId uint3
 
 var processors = map[string]ProcessorFn{
 	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": processDocx,
-	"application/pdf": processPdf,
-	"text/plain":      processText,
-	"text/markdown":   processText,
-	"text/csv":        processText,
+	"application/pdf":   processPdf,
+	"application/msword": processDoc,
+	"text/plain":        processText,
+	"text/markdown":     processText,
+	"text/csv":          processText,
 }
 
 var extToMime = map[string]string{
 	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".doc":  "application/msword",
 	".pdf":  "application/pdf",
 	".txt":  "text/plain",
 	".md":   "text/markdown",
