@@ -135,6 +135,7 @@ func convertHEIC(data []byte) ([]byte, error) {
 
 	cmd := exec.Command("convert", tmpIn.Name(), tmpOut.Name())
 	if out, err := cmd.CombinedOutput(); err != nil {
+		fmt.Println("[Warning] heic failed ot convert to jpg")
 		return nil, fmt.Errorf("ImageMagick heic convert error: %v — %s", err, out)
 	}
 
