@@ -1299,8 +1299,11 @@ const ChatApp = (() => {
     li.id = `job-${jobId}`;
     const titles = escapeHtml(files.join(', '));
     li.innerHTML = `
-      <div class="progress-item-title">${titles}</div>
-      <div class="progress-item-stage" id="job-stage-${jobId}">Starting...</div>
+      <div class="progress-item-title" title="${titles}">${titles}</div>
+      <div class="progress-item-stage" id="job-stage-wrapper-${jobId}">
+        <span id="job-stage-${jobId}">Starting...</span>
+        <span class="progress-item-percentage" id="job-perc-${jobId}">0%</span>
+      </div>
       <div class="progress-bar-bg"><div class="progress-bar-fill" id="job-fill-${jobId}"></div></div>
     `;
     list.prepend(li);
@@ -1310,16 +1313,34 @@ const ChatApp = (() => {
       try {
         const data = JSON.parse(event.data);
         const stageEl = $(`job-stage-${jobId}`);
+        const percEl = $(`job-perc-${jobId}`);
         const fillEl = $(`job-fill-${jobId}`);
 
         if (stageEl) stageEl.textContent = data.stage || data.status;
-        if (fillEl && data.progress !== undefined) fillEl.style.width = `${data.progress}%`;
+        if (percEl && data.progress !== undefined) percEl.textContent = `${data.progress}%`;
+        if (fillEl && data.progress !== undefined) {
+          fillEl.style.width = `${data.progress}%`;
+          // Dynamically adjust color as it nears completion
+          if (data.progress > 90) {
+            fillEl.style.background = 'linear-gradient(90deg, #10b981, #34d399)'; // Emerald
+            fillEl.style.boxShadow = '0 0 12px rgba(16, 185, 129, 0.4)';
+          }
+        }
 
         if (data.status === 'completed' || data.status === 'error') {
           source.close();
           if (stageEl) {
             stageEl.textContent = data.status === 'completed' ? 'Completed!' : 'Error occurred.';
             stageEl.style.color = data.status === 'completed' ? '#4ade80' : '#ef4444';
+          }
+          if (percEl) {
+            percEl.textContent = data.status === 'completed' ? '100%' : 'Failed';
+            percEl.style.color = data.status === 'completed' ? '#4ade80' : '#ef4444';
+          }
+          if (fillEl && data.status === 'completed') {
+            fillEl.style.width = '100%';
+            fillEl.style.background = '#4ade80';
+            fillEl.style.boxShadow = '0 0 16px rgba(74, 222, 128, 0.4)';
           }
           if (data.status === 'completed') {
             setTimeout(() => loadDocuments(), 1000);
