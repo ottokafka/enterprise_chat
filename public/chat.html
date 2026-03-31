@@ -732,7 +732,7 @@
       display: block;
       transition: opacity var(--transition);
     }
-    
+
     .image-preview-chip img:hover {
       opacity: 0.8;
     }
@@ -743,7 +743,7 @@
       right: 2px;
       width: 18px;
       height: 18px;
-      background: rgba(0,0,0,0.6);
+      background: rgba(0, 0, 0, 0.6);
       color: white;
       border: none;
       border-radius: 50%;
@@ -755,7 +755,7 @@
       opacity: 0;
       transition: opacity var(--transition), background var(--transition);
     }
-    
+
     .image-preview-chip:hover .remove-btn {
       opacity: 1;
     }
@@ -1291,9 +1291,17 @@
     }
 
     @keyframes gradient-flow {
-      0% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
+      0% {
+        background-position: 0% 50%;
+      }
+
+      50% {
+        background-position: 100% 50%;
+      }
+
+      100% {
+        background-position: 0% 50%;
+      }
     }
 
     .progress-item-meta {
@@ -1493,6 +1501,7 @@
       color: #ef4444;
       background: rgba(239, 68, 68, 0.1);
     }
+
     .chat-attached-image {
       max-width: 200px;
       max-height: 200px;
@@ -1507,16 +1516,21 @@
     .image-modal {
       display: none;
       position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
       background: rgba(0, 0, 0, 0.85);
       z-index: 9999;
       align-items: center;
       justify-content: center;
       cursor: zoom-out;
     }
+
     .image-modal.open {
       display: flex;
     }
+
     .image-modal-content {
       max-width: 90vw;
       max-height: 90vh;
@@ -1557,19 +1571,36 @@
         </div>
       </div>
       <div class="sidebar-body">
-        <div class="sidebar-section-label" style="color: white; display: flex; justify-content: space-between; align-items: center;">
+        <div class="sidebar-section-label"
+          style="color: white; display: flex; justify-content: space-between; align-items: center;">
           <span>System Prompt</span>
-          <button id="manage-prompts-sidebar-btn" title="Manage Prompts" style="background:transparent; border:none; color:var(--text-muted); cursor:pointer; display:flex; padding:4px; border-radius: 4px; transition: all var(--transition);" onmouseover="this.style.color='var(--text-primary)'; this.style.background='var(--bg-hover)';" onmouseout="this.style.color='var(--text-muted)'; this.style.background='transparent';">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <button id="manage-prompts-sidebar-btn" title="Manage Prompts"
+            style="background:transparent; border:none; color:var(--text-muted); cursor:pointer; display:flex; padding:4px; border-radius: 4px; transition: all var(--transition);"
+            onmouseover="this.style.color='var(--text-primary)'; this.style.background='var(--bg-hover)';"
+            onmouseout="this.style.color='var(--text-muted)'; this.style.background='transparent';">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+              </path>
+            </svg>
           </button>
         </div>
         <div style="padding: 0 6px 16px; border-bottom: 1px solid var(--border); margin-bottom: 8px;">
           <div class="custom-select-wrapper" style="position: relative;">
-            <button id="sidebar-system-prompt-btn" style="width: 100%; display: flex; justify-content: space-between; align-items: center; background: var(--bg-card); border: 1px solid var(--border-mid); color: var(--text-primary); padding: 8px 10px; border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; text-align: left; transition: all var(--transition);" onmouseover="this.style.borderColor='var(--text-muted)'" onmouseout="this.style.borderColor='var(--border-mid)'">
-              <span id="sidebar-system-prompt-label" style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px;">None (Default)</span>
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            <button id="sidebar-system-prompt-btn"
+              style="width: 100%; display: flex; justify-content: space-between; align-items: center; background: var(--bg-card); border: 1px solid var(--border-mid); color: var(--text-primary); padding: 8px 10px; border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; text-align: left; transition: all var(--transition);"
+              onmouseover="this.style.borderColor='var(--text-muted)'"
+              onmouseout="this.style.borderColor='var(--border-mid)'">
+              <span id="sidebar-system-prompt-label"
+                style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px;">None
+                (Default)</span>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
             </button>
-            <div id="sidebar-system-prompt-menu" style="display: none; position: absolute; top: calc(100% + 6px); left: 0; right: 0; background: var(--bg-surface); border: 1px solid var(--border-mid); border-radius: var(--radius-sm); z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.5); max-height: 200px; overflow-y: auto;">
+            <div id="sidebar-system-prompt-menu"
+              style="display: none; position: absolute; top: calc(100% + 6px); left: 0; right: 0; background: var(--bg-surface); border: 1px solid var(--border-mid); border-radius: var(--radius-sm); z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.5); max-height: 200px; overflow-y: auto;">
               <!-- Options injected here -->
             </div>
           </div>
@@ -1633,8 +1664,9 @@
                 d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
             </svg>
           </button>
-          <input type="file" id="file-input" multiple accept="image/*,.pdf,.csv,.docx,.doc,.xlsx,.txt,.md"
-            style="display:none" aria-label="File input">
+          <input type="file" id="file-input" multiple
+            accept="image/*,.pdf,.csv,.docx,.doc,.xlsx,.txt,.md,.heic,.jpg.,jpeg" style="display:none"
+            aria-label="File input">
 
           <!-- Text input -->
           <textarea id="chat-input" placeholder="Message..." rows="1" aria-label="Chat message input"></textarea>
@@ -1663,7 +1695,8 @@
       <div class="right-sidebar-body">
         <div class="sidebar-section-label" style="color: white;">Upload Documents</div>
         <div class="upload-zone" id="rag-upload-zone">
-          <input type="file" id="rag-file-input" multiple accept=".pdf,.docx,.doc,.txt,.csv,.md" style="display:none">
+          <input type="file" id="rag-file-input" multiple accept=".pdf,.docx,.doc,.txt,.csv,.md,.heic,.jpg.,jpeg"
+            style="display:none">
           <label for="rag-file-input" class="upload-btn">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -1786,7 +1819,8 @@
   </div>
 
   <!-- ══ Image Modal ══════════════════════════════════ -->
-  <div id="image-modal" class="image-modal" onclick="this.classList.remove('open')" role="dialog" aria-modal="true" aria-label="Enlarged image">
+  <div id="image-modal" class="image-modal" onclick="this.classList.remove('open')" role="dialog" aria-modal="true"
+    aria-label="Enlarged image">
     <img id="image-modal-content" class="image-modal-content" alt="Enlarged pasted image" />
   </div>
 
