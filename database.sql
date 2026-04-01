@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS default.rag_embeddings
     chunk_index UInt32,
     embedding Array(Float32),
     created_at Date DEFAULT toDate(now())
-) ENGINE = MergeTree()
+) ENGINE = MergeTree();
 
 -- 6. System Prompts Table
 CREATE TABLE IF NOT EXISTS default.system_prompts

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log"
 	"os"
+	"strings"
 
 	clickhouse "github.com/ClickHouse/clickhouse-go/v2"
 )
@@ -42,6 +43,30 @@ func InitClickhouse() {
 		log.Printf("Failed to ping Clickhouse: %v", err)
 	} else {
 		log.Println("Successfully connected to Clickhouse")
+		AutoMigrate()
+	}
+}
+
+// AutoMigrate creates tables from database.sql if they don't exist.
+func AutoMigrate() {
+	sqlFile, err := os.ReadFile("database.sql")
+	if err != nil {
+		log.Printf("Warning: Failed to read database.sql for migration: %v", err)
+		return
+	}
+
+	statements := strings.Split(string(sqlFile), ";")
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+
+		if _, err := ClickhouseDB.Exec(stmt); err != nil {
+			log.Printf("Failed to execute migration statement: %v\nStatement: %s", err, stmt)
+		} else {
+			log.Printf("Successfully executed migration statement")
+		}
 	}
 }
 
