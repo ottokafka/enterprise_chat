@@ -321,6 +321,25 @@
     "finish_reason": "stop"
   }]
 }</code></pre>
+      <!-- Chat with Files -->
+      <h2>Chat completions with File Uploads</h2>
+      <p class="section-desc">Upload files (PDF, XLSX, Images, etc.) alongside your messages using
+        <code>multipart/form-data</code>.</p>
+      <pre><code class="language-bash example-code">curl https://alice.forest-interactive.com/v1/chat/completions \
+  -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
+  -F "model=qwen3.5" \
+  -F 'messages=[{"role": "user", "content": "Analyze these files."}]' \
+  -F "file=@/path/to/report.pdf" \
+  -F "file=@/path/to/data.xlsx"</code></pre>
+      <div class="response-label">Response</div>
+      <pre><code class="language-json">{
+  "id": "chatcmpl-456",
+  "choices": [{
+    "index": 0,
+    "message": { "role": "assistant", "content": "I've analyzed the PDF report and the XLSX data. Here's a summary..." },
+    "finish_reason": "stop"
+  }]
+}</code></pre>
 
       <!-- Multimodal -->
       <h2>Multimodal with Vision</h2>
@@ -423,6 +442,34 @@
     { "index": 0, "relevance_score": 0.9836259484291077 },
     { "index": 2, "relevance_score": 0.10805725306272507 }
   ]
+}</code></pre>
+
+      <!-- RAG Pipeline -->
+      <h2>RAG Pipeline (Retrieve → Augment → Generate)</h2>
+      <p class="section-desc">Search through your indexed documents and generate an answer based on the retrieved
+        context.</p>
+      <pre><code class="language-bash example-code">curl -X POST https://alice.forest-interactive.com/v1/rag \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
+  -d '{
+    "query": "What are our security protocols?",
+    "document_names": ["npro_public_knowledge.md"],
+    "top_n": 5,
+    "stream": false
+  }'</code></pre>
+      <div class="response-label">Response</div>
+      <pre><code class="language-json">{
+  "query": "What are our security protocols?",
+  "answer": "Based on the security manual, our protocols include...",
+  "citations": [
+    { "id": "chunk_1", "text": "...", "metadata": { "source": "npro_public_knowledge.md", "page": 1 } }
+  ],
+  "meta": {
+    "retrieved": 5,
+    "dense_count": 20,
+    "sparse_count": 20,
+    "reranked": true
+  }
 }</code></pre>
     </div>
   </div>
