@@ -77,7 +77,7 @@ const ChatApp = (() => {
           <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
         </svg>
         <h2>What do you want to know?</h2>
-        <p class="empty-sub">Supported files: images, pdf, csv, docx</p>
+       <p class="empty-sub">Supported files: .jpg, .jpeg, .png, .webp, .gif, .heic, .pdf, .xlsx, .csv, .docx, .doc, .txt, .md</p>
       </div>`;
     document.querySelector('.main-area')?.classList.add('is-empty');
   }
@@ -106,7 +106,7 @@ const ChatApp = (() => {
         .map(a => `<img src="${a.dataUrl}" class="chat-attached-image" onclick="ChatApp.openImageModal(this.src)" alt="${escapeHtml(a.name)}" />`)
         .join('');
       if (imagesHtml) {
-         attachmentsHtml = `<div class="msg-attachments" style="display: flex; gap: 8px; flex-wrap: wrap;">${imagesHtml}</div>`;
+        attachmentsHtml = `<div class="msg-attachments" style="display: flex; gap: 8px; flex-wrap: wrap;">${imagesHtml}</div>`;
       }
     }
     return `
@@ -977,7 +977,7 @@ const ChatApp = (() => {
     input?.addEventListener('paste', async e => {
       const items = e.clipboardData?.items;
       if (!items) return;
-      
+
       const filesToAdd = [];
       for (const item of items) {
         if (item.type.startsWith('image/')) {

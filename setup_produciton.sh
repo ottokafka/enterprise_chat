@@ -2,12 +2,15 @@
 
 # Variables
 SERVICE_NAME="enterprise_chat"
-EXECUTABLE_PATH="/home/alice/enterprise_chat/enterprise_chat"
+WORKING_DIR="$(pwd)"
+CURRENT_USER="$(whoami)"
+EXECUTABLE_PATH="${WORKING_DIR}/${SERVICE_NAME}"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
 # Ensure the binary exists
 if [ ! -f "$EXECUTABLE_PATH" ]; then
   echo "Error: The binary '$EXECUTABLE_PATH' does not exist."
+  echo "Make sure you have built the application with 'go build -o $SERVICE_NAME' and are running this script from the project root."
   exit 1
 fi
 
@@ -22,8 +25,8 @@ After=network.target
 Type=simple
 ExecStart=$EXECUTABLE_PATH
 Restart=on-failure
-User=alice
-WorkingDirectory=/home/alice/enterprise_chat
+User=$CURRENT_USER
+WorkingDirectory=$WORKING_DIR
 Environment=GIN_MODE=release
 LimitNOFILE=65536
 

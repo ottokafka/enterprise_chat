@@ -43,12 +43,12 @@ func InitClickhouse() {
 		log.Printf("Failed to ping Clickhouse: %v", err)
 	} else {
 		log.Println("Successfully connected to Clickhouse")
-		AutoMigrate()
+		CreateTables()
 	}
 }
 
-// AutoMigrate creates tables from database.sql if they don't exist.
-func AutoMigrate() {
+// CreateTables creates tables from database.sql if they don't exist.
+func CreateTables() {
 	sqlFile, err := os.ReadFile("database.sql")
 	if err != nil {
 		log.Printf("Warning: Failed to read database.sql for migration: %v", err)
@@ -63,9 +63,7 @@ func AutoMigrate() {
 		}
 
 		if _, err := ClickhouseDB.Exec(stmt); err != nil {
-			log.Printf("Failed to execute migration statement: %v\nStatement: %s", err, stmt)
-		} else {
-			log.Printf("Successfully executed migration statement")
+			log.Printf("[Warning] table creation failed: %v", err)
 		}
 	}
 }
