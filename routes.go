@@ -55,6 +55,9 @@ func InitRoutes() *http.ServeMux {
 	mux.Handle("PATCH /v1/documents/{id}", ApiAuthMiddleware(http.HandlerFunc(updateDocumentGlobalStatus)))
 	mux.Handle("POST /v1/documents/{id}/share", ApiAuthMiddleware(http.HandlerFunc(shareDocument)))
 
+	// Web Search
+	mux.Handle("POST /v1/search", ApiAuthMiddleware(http.HandlerFunc(webSearch)))
+
 	// RAG Context Retrieval
 	mux.Handle("GET /v1/documents/{id}/snapshot", ApiAuthMiddleware(http.HandlerFunc(getDocumentSnapshot)))
 	mux.Handle("POST /v1/retrieve", ApiAuthMiddleware(http.HandlerFunc(retrieveContext)))

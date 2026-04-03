@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 	"sync/atomic"
@@ -26,11 +27,32 @@ import (
 
 const (
 	duckDuckGoLiteURL = "https://lite.duckduckgo.com/lite/"
-	llmBaseURL        = "https://alice.forest-interactive.com/v1/chat/completions"
-	llmAPIKey         = "loser_use_typescript12345"
-	llmModel          = "Qwen3.5-35B-A3B-GGUF"
 	defaultTopN       = 5
 )
+
+// searchLLMBaseURL returns the chat-completions URL for the configured vLLM instance.
+func searchLLMBaseURL() string {
+	base := os.Getenv("MAIN_GPU_URL")
+	base = strings.TrimRight(base, "/")
+	return base + "/chat/completions"
+}
+
+// searchLLMAPIKey returns the API key for the configured vLLM instance.
+func searchLLMAPIKey() string {
+	return os.Getenv("OPENAI_API_KEY")
+}
+
+// searchLLMModel returns the default model name for the configured vLLM instance.
+// Reads SEARCH_MODEL env first, falls back to MAIN_MODEL, then a generic default.
+func searchLLMModel() string {
+	if m := os.Getenv("SEARCH_MODEL"); m != "" {
+		return m
+	}
+	if m := os.Getenv("MAIN_MODEL"); m != "" {
+		return m
+	}
+	return "default"
+}
 
 // ─────────────────────────────────────────────
 // Data Models
@@ -103,7 +125,7 @@ func init() {
 	// Check if chome is installled
 	allocCtx, allocCancel := chromedp.NewExecAllocator(
 		context.Background(),
-		append(chromedp.DefaultExecAllocatorOptions[:])...,
+		chromedp.DefaultExecAllocatorOptions[:]...,
 	)
 	defer allocCancel()
 
@@ -310,7 +332,7 @@ Return ONLY a valid JSON array (no markdown, no explanation) with objects contai
 	)
 
 	reqBody := LLMRequest{
-		Model: llmModel,
+		Model: searchLLMModel(),
 		Messages: []LLMMessage{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userPrompt},
@@ -591,7 +613,7 @@ Be accurate, concise, and helpful. If the context does not contain enough inform
 	userPrompt := fmt.Sprintf("Context:\n%s\n\nQuestion: %s", context, userQuery)
 
 	reqBody := LLMRequest{
-		Model: llmModel,
+		Model: searchLLMModel(),
 		Messages: []LLMMessage{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userPrompt},
@@ -605,12 +627,12 @@ Be accurate, concise, and helpful. If the context does not contain enough inform
 		return fmt.Errorf("marshalling stream request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, llmBaseURL, bytes.NewReader(data))
+	req, err := http.NewRequest(http.MethodPost, searchLLMBaseURL(), bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("building stream request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+llmAPIKey)
+	req.Header.Set("Authorization", "Bearer "+searchLLMAPIKey())
 	req.Header.Set("Accept", "text/event-stream")
 
 	client := &http.Client{Timeout: 120 * time.Second}
@@ -665,12 +687,12 @@ func callLLM(reqBody LLMRequest) (string, error) {
 		return "", fmt.Errorf("marshalling LLM request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, llmBaseURL, bytes.NewReader(data))
+	req, err := http.NewRequest(http.MethodPost, searchLLMBaseURL(), bytes.NewReader(data))
 	if err != nil {
 		return "", fmt.Errorf("building LLM request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+llmAPIKey)
+	req.Header.Set("Authorization", "Bearer "+searchLLMAPIKey())
 
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
@@ -713,31 +735,52 @@ func callLLM(reqBody LLMRequest) (string, error) {
 
 // Search is the top-level pipeline function.
 //
-//	query     – the user's natural-language question
-//	deepCrawl – if true, fetches and extracts full page content for each result
-//	out       – where the streamed final answer is written (e.g. os.Stdout or an http.ResponseWriter)
-func Search(query string, deepCrawl bool, out io.Writer) error {
-	log.Printf("[search] query=%q deepCrawl=%v hasBrowser=%v", query, deepCrawl, hasBrowser)
+//	query      – the user's natural-language question
+//	deepCrawl  – if true, fetches and extracts full page content for each result
+//	out        – where the streamed final answer is written (e.g. os.Stdout or an http.ResponseWriter)
+//	progressCb – callback for progress messages to be streamed as reasoning content
+func Search(query string, deepCrawl bool, out io.Writer, progressCb func(string)) error {
+	msg := fmt.Sprintf("[search] query=%q deepCrawl=%v hasBrowser=%v", query, deepCrawl, hasBrowser)
+	log.Println(msg)
+	if progressCb != nil {
+		progressCb(msg)
+	}
 
 	// ── Step 1: Fetch raw DDG HTML ────────────────────────────────────────
-	log.Println("[search] fetching DuckDuckGo Lite results…")
+	msg = "[search] fetching DuckDuckGo Lite results…"
+	log.Println(msg)
+	if progressCb != nil {
+		progressCb(msg)
+	}
 	rawHTML, err := fetchDDGHTML(query)
 	if err != nil {
 		return fmt.Errorf("step1 DDG fetch: %w", err)
 	}
 
 	// ── Step 2: LLM-powered parsing ──────────────────────────────────────
-	log.Println("[search] parsing results with LLM…")
+	msg = "[search] parsing results with LLM…"
+	log.Println(msg)
+	if progressCb != nil {
+		progressCb(msg)
+	}
 	results, err := parseSearchResultsWithLLM(rawHTML, defaultTopN)
 	if err != nil {
 		return fmt.Errorf("step2 LLM parse: %w", err)
 	}
-	log.Printf("[search] parsed %d results", len(results))
+	msg = fmt.Sprintf("[search] parsed %d results", len(results))
+	log.Println(msg)
+	if progressCb != nil {
+		progressCb(msg)
+	}	// fmt.Printf("%v", results)
 
 	// ── Step 3 (optional): Deep crawl ────────────────────────────────────
 	var crawled []CrawledPage
 	if deepCrawl {
-		log.Println("[search] starting deep crawl…")
+		msg = "[search] starting deep crawl…"
+		log.Println(msg)
+		if progressCb != nil {
+			progressCb(msg)
+		}
 
 		// allowedResults tracks only URLs that passed the pre-flight and were
 		// successfully crawled. Blocked or errored entries are excluded so their
@@ -748,7 +791,11 @@ func Search(query string, deepCrawl bool, out io.Writer) error {
 			if r.URL == "" {
 				continue
 			}
-			log.Printf("[search] crawling %s", r.URL)
+			msg := fmt.Sprintf("[search] crawling %s", r.URL)
+			log.Println(msg)
+			if progressCb != nil {
+				progressCb(msg)
+			}
 			page, err := crawlURL(r.URL)
 			if err != nil {
 				var cfErr *cfBlockedError
@@ -765,11 +812,19 @@ func Search(query string, deepCrawl bool, out io.Writer) error {
 
 		// Replace with the clean set so citations only reference reachable sources.
 		results = allowedResults
-		log.Printf("[search] crawled %d/%d pages", len(crawled), defaultTopN)
+		msg = fmt.Sprintf("[search] crawled %d/%d pages", len(crawled), defaultTopN)
+		log.Println(msg)
+		if progressCb != nil {
+			progressCb(msg)
+		}
 	}
 
 	// ── Step 4: Synthesise & stream ───────────────────────────────────────
-	log.Println("[search] streaming final answer…")
+	msg = "[search] streaming final answer…"
+	log.Println(msg)
+	if progressCb != nil {
+		progressCb(msg)
+	}
 	ctx := buildContext(results, crawled)
 	if err := streamAnswer(query, ctx, results, out); err != nil {
 		return fmt.Errorf("step4 stream: %w", err)
@@ -792,7 +847,7 @@ func test_search() {
 	fmt.Printf("🔍 Searching: %q\n\n", query)
 
 	// Set deepCrawl=true to trigger Chromedp/HTTP fallback + Readability extraction.
-	if err := Search(query, true, log.Writer()); err != nil {
+	if err := Search(query, true, log.Writer(), nil); err != nil {
 		log.Fatalf("search failed: %v", err)
 	}
 }

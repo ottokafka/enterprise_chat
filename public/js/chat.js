@@ -14,6 +14,7 @@ const ChatApp = (() => {
   let activeDocumentNames = new Set();
   let systemPrompts = [];
   let selectedSystemPromptId = 'none';
+  let webSearchEnabled = false; // true when Web Search toggle is active
 
   // ── DOM Helpers ───────────────────────────────────────────────────────────
   const $ = id => document.getElementById(id);
@@ -151,12 +152,13 @@ const ChatApp = (() => {
     const reasoning = msg.reasoning || '';
     const duration = msg.reasoningDuration || null;
     const content = msg.content || '';
+    const isSearch = reasoning.includes('[search]');
 
     const reasoningBlock = reasoning ? `
       <div class="reasoning-block">
         <button class="reasoning-toggle" onclick="ChatApp.toggleReasoning(this)">
           <svg class="chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-          <span>${duration ? `Thought for ${duration}` : 'Thinking...'}</span>
+          <span>${duration ? (isSearch ? `Searched for ${duration}` : `Thought for ${duration}`) : (isSearch ? 'Searching...' : 'Thinking...')}</span>
         </button>
         <div class="reasoning-content collapsed">${escapeHtml(reasoning)}</div>
       </div>` : '';
@@ -310,7 +312,15 @@ const ChatApp = (() => {
 
     try {
       let requestConfig;
-      if (activeDocumentNames.size > 0) {
+      if (webSearchEnabled) {
+        // ── Web Search path ──────────────────────────────────────────────
+        requestConfig = {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: text || ' ', deep_crawl: true }),
+          signal: abortController.signal,
+        };
+      } else if (activeDocumentNames.size > 0) {
         requestConfig = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -329,7 +339,11 @@ const ChatApp = (() => {
         };
       }
 
-      const endpoint = activeDocumentNames.size > 0 ? '/v1/rag' : '/v1/chat/completions';
+      const endpoint = webSearchEnabled
+        ? '/v1/search'
+        : activeDocumentNames.size > 0
+          ? '/v1/rag'
+          : '/v1/chat/completions';
       const response = await fetch(endpoint, requestConfig);
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -388,7 +402,8 @@ const ChatApp = (() => {
             // Throttle DOM updates to ~20fps
             const now = Date.now();
             if (now - lastUpdate > 50) {
-              updateStreamingDOM(reasoningBuffer, contentBuffer, hasReasoning, reasoningStart);
+              const isSearch = reasoningBuffer.includes('[search]');
+              updateStreamingDOM(reasoningBuffer, contentBuffer, hasReasoning, reasoningStart, false, isSearch);
               lastUpdate = now;
               scrollToBottom();
             }
@@ -397,7 +412,8 @@ const ChatApp = (() => {
       }
 
       // Final update
-      updateStreamingDOM(reasoningBuffer, contentBuffer, hasReasoning, reasoningStart, true);
+      const isSearch = reasoningBuffer.includes('[search]');
+      updateStreamingDOM(reasoningBuffer, contentBuffer, hasReasoning, reasoningStart, true, isSearch);
       scrollToBottom();
 
       // Finalize: save assistant message to IndexedDB
@@ -446,7 +462,7 @@ const ChatApp = (() => {
     }
   }
 
-  function updateStreamingDOM(reasoning, content, hasReasoning, reasoningStart, isFinal = false) {
+  function updateStreamingDOM(reasoning, content, hasReasoning, reasoningStart, isFinal = false, isSearch = false) {
     const contentEl = $('streaming-content');
     if (contentEl) {
       contentEl.innerHTML = content
@@ -460,7 +476,9 @@ const ChatApp = (() => {
       if (wrapper) wrapper.style.display = '';
       if (body) body.textContent = reasoning;
       if (label && isFinal) {
-        label.textContent = `Thought for ${formatDuration(Date.now() - reasoningStart)}`;
+        label.textContent = isSearch ? `Searched for ${formatDuration(Date.now() - reasoningStart)}` : `Thought for ${formatDuration(Date.now() - reasoningStart)}`;
+      } else if (label) {
+        label.textContent = isSearch ? 'Searching...' : 'Thinking...';
       }
     }
   }
@@ -592,7 +610,16 @@ const ChatApp = (() => {
 
     try {
       let requestConfig;
-      if (activeDocumentNames.size > 0) {
+      if (webSearchEnabled) {
+        // ── Web Search path ──────────────────────────────────────────────
+        const lastMsg = conversation[conversation.length - 1];
+        requestConfig = {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: lastMsg.content, deep_crawl: true }),
+          signal: abortController.signal,
+        };
+      } else if (activeDocumentNames.size > 0) {
         const lastMsg = conversation[conversation.length - 1];
         requestConfig = {
           method: 'POST',
@@ -612,7 +639,11 @@ const ChatApp = (() => {
         };
       }
 
-      const endpoint = activeDocumentNames.size > 0 ? '/v1/rag' : '/v1/chat/completions';
+      const endpoint = webSearchEnabled
+        ? '/v1/search'
+        : activeDocumentNames.size > 0
+          ? '/v1/rag'
+          : '/v1/chat/completions';
       const response = await fetch(endpoint, requestConfig);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const reader = response.body.getReader();
@@ -657,13 +688,15 @@ const ChatApp = (() => {
             if (delta.content) contentBuffer += delta.content;
             const now = Date.now();
             if (now - lastUpdate > 50) {
-              updateStreamingDOM(reasoningBuffer, contentBuffer, hasReasoning, reasoningStart);
+              const isSearch = reasoningBuffer.includes('[search]');
+              updateStreamingDOM(reasoningBuffer, contentBuffer, hasReasoning, reasoningStart, false, isSearch);
               lastUpdate = now; scrollToBottom();
             }
           } catch { }
         }
       }
-      updateStreamingDOM(reasoningBuffer, contentBuffer, hasReasoning, reasoningStart, true);
+      const isSearch = reasoningBuffer.includes('[search]');
+      updateStreamingDOM(reasoningBuffer, contentBuffer, hasReasoning, reasoningStart, true, isSearch);
       scrollToBottom();
       const duration = hasReasoning ? formatDuration(Date.now() - reasoningStart) : null;
       const assistTimestamp = new Date().toISOString();
@@ -937,6 +970,14 @@ const ChatApp = (() => {
     });
 
     stopBtn?.addEventListener('click', () => stopStreaming());
+
+    // Web Search toggle
+    $('web-search-toggle')?.addEventListener('click', () => {
+      webSearchEnabled = !webSearchEnabled;
+      const btn = $('web-search-toggle');
+      btn?.classList.toggle('active', webSearchEnabled);
+      btn?.setAttribute('aria-pressed', String(webSearchEnabled));
+    });
 
     input?.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) {
