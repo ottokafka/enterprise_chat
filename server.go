@@ -22,6 +22,7 @@ func main() {
 	InitClickhouse()
 	InitSessionStore()
 	InitMSAL()
+	test_search()
 
 	// Start email cron jobs (weekly + monthly usage reports)
 	InitEmailCronJobs()
