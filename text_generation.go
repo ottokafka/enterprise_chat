@@ -525,7 +525,7 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if stream {
-			progressCb("[search] Generating optimal search queries...")
+			progressCb("[search] web search generating optimal search queries...")
 		}
 
 		queries, err := generateSearchQueries(
@@ -543,7 +543,7 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 
 			lastIdx := len(messages) - 1
 			lastMsg := messages[lastIdx]
-			
+
 			if contentStr, ok := lastMsg["content"].(string); ok {
 				lastMsg["content"] = contentStr + injection
 			} else if contentParts, ok := lastMsg["content"].([]map[string]any); ok {

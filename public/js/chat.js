@@ -473,6 +473,24 @@ const ChatApp = (() => {
       } else if (label) {
         label.textContent = isSearch ? 'Searching...' : 'Thinking...';
       }
+
+      // Auto-expand reasoning if Web Search is enabled and it's a search
+      if (webSearchEnabled && isSearch && wrapper && body) {
+        if (!isFinal) {
+          if (body.classList.contains('collapsed')) {
+            body.classList.remove('collapsed');
+            wrapper.classList.add('expanded');
+            const chevron = wrapper.querySelector('.chevron');
+            if (chevron) chevron.style.transform = 'rotate(180deg)';
+          }
+        } else {
+          // Collapse on completion
+          body.classList.add('collapsed');
+          wrapper.classList.remove('expanded');
+          const chevron = wrapper.querySelector('.chevron');
+          if (chevron) chevron.style.transform = '';
+        }
+      }
     }
   }
 
