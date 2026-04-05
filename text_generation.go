@@ -356,6 +356,7 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 	var stream bool
 	var model = "qwen3.5"
 	var tools json.RawMessage
+	var webSearch bool
 
 	if r.MultipartForm != nil {
 		// Multipart request — values come as form fields
@@ -374,6 +375,9 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 		if v := r.FormValue("max_tokens"); v != "" {
 			fmt.Sscanf(v, "%d", &maxTokens)
 		}
+		if v := r.FormValue("web_search"); v == "true" {
+			webSearch = true
+		}
 	} else {
 		var body struct {
 			Messages  json.RawMessage `json:"messages"`
@@ -381,6 +385,7 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 			Stream    bool            `json:"stream"`
 			Model     string          `json:"model"`
 			Tools     json.RawMessage `json:"tools"`
+			WebSearch bool            `json:"web_search"`
 		}
 		body.MaxTokens = maxTokens
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -396,6 +401,7 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 			model = body.Model
 		}
 		tools = body.Tools
+		webSearch = body.WebSearch
 	}
 
 	// messages is a []map[string]any so we preserve arbitrary openai-format structures
@@ -471,6 +477,93 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	headersWritten := false
+	writeHeadersOnce := func() {
+		if !headersWritten && stream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Connection", "keep-alive")
+			if origin := r.Header.Get("Origin"); origin != "" {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+			} else {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			}
+			headersWritten = true
+		}
+	}
+
+	// ==========================================
+	// 🔍 WEB SEARCH PIPELINE INTERCEPTION
+	// ==========================================
+	if webSearch && len(messages) > 0 {
+		var flusher http.Flusher
+		var canFlush bool
+		if stream {
+			writeHeadersOnce()
+			flusher, canFlush = w.(http.Flusher)
+		}
+
+		progressCb := func(msg string) {
+			log.Println(msg)
+			if stream {
+				// Send as reasoning partial
+				chunk := map[string]interface{}{
+					"choices": []map[string]interface{}{
+						{
+							"delta": map[string]interface{}{
+								"reasoning_content": msg + "\n",
+							},
+						},
+					},
+				}
+				rawChunk, _ := json.Marshal(chunk)
+				fmt.Fprintf(w, "data: %s\n\n", rawChunk)
+				if canFlush {
+					flusher.Flush()
+				}
+			}
+		}
+
+		if stream {
+			progressCb("[search] Generating optimal search queries...")
+		}
+
+		queries, err := generateSearchQueries(
+			context.Background(),
+			messages,
+			searchLLMModel(),
+			searchLLMAPIKey(),
+			searchLLMBaseURL(),
+		)
+
+		if err == nil && len(queries) > 0 {
+			contextText := executeParallelSearches(queries, true, progressCb)
+
+			injection := fmt.Sprintf("\n\n--- REAL-TIME WEB SEARCH CONTEXT ---\n%s\n\nPlease answer my question using the context above. Cite sources as [N].", contextText)
+
+			lastIdx := len(messages) - 1
+			lastMsg := messages[lastIdx]
+			
+			if contentStr, ok := lastMsg["content"].(string); ok {
+				lastMsg["content"] = contentStr + injection
+			} else if contentParts, ok := lastMsg["content"].([]map[string]any); ok {
+				contentParts = append(contentParts, map[string]any{
+					"type": "text",
+					"text": injection,
+				})
+				lastMsg["content"] = contentParts
+			} else if contentParts, ok := lastMsg["content"].([]any); ok {
+				contentParts = append(contentParts, map[string]any{
+					"type": "text",
+					"text": injection,
+				})
+				lastMsg["content"] = contentParts
+			}
+			messages[lastIdx] = lastMsg
+		}
+	}
+	// ==========================================
+
 	// Re-encode messages as JSON to build openai params
 	messagesJSON, _ := json.Marshal(messages)
 
@@ -512,14 +605,7 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ── Streaming ─────────────────────────────────────────────────────────────
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	if origin := r.Header.Get("Origin"); origin != "" {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-	} else {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-	}
+	writeHeadersOnce()
 
 	flusher, canFlush := w.(http.Flusher)
 	streamResp := llmClient.Chat.Completions.NewStreaming(context.Background(), params)

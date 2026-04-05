@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -771,9 +772,9 @@ func Search(query string, deepCrawl bool, out io.Writer, progressCb func(string)
 	log.Println(msg)
 	if progressCb != nil {
 		progressCb(msg)
-	}	// fmt.Printf("%v", results)
+	}
 
-	// ── Step 3 (optional): Deep crawl ────────────────────────────────────
+	// ── Step 3  Deep crawl ────────────────────────────────────
 	var crawled []CrawledPage
 	if deepCrawl {
 		msg = "[search] starting deep crawl…"
@@ -831,6 +832,132 @@ func Search(query string, deepCrawl bool, out io.Writer, progressCb func(string)
 	}
 
 	return nil
+}
+
+// ─────────────────────────────────────────────
+// Multi-Query / Query Expansion
+// ─────────────────────────────────────────────
+
+type SearchQueryGen struct {
+	Queries []string `json:"queries"`
+}
+
+func generateSearchQueries(ctx context.Context, messages []map[string]any, model, apiKey, baseURL string) ([]string, error) {
+	systemPrompt := `You are an expert web search query generator. 
+Given the user's conversation history, generate up to 3 distinct search queries to gather the necessary information to answer the user's final prompt. 
+Output ONLY valid JSON in this format: {"queries": ["query1", "query2"]}`
+
+	var promptMessages []LLMMessage
+	promptMessages = append(promptMessages, LLMMessage{Role: "system", Content: systemPrompt})
+
+	// Add history, keeping only 'role' and 'content' strings
+	for _, m := range messages {
+		if role, ok := m["role"].(string); ok {
+			var contentStr string
+			switch content := m["content"].(type) {
+			case string:
+				contentStr = content
+			case []interface{}:
+				for _, part := range content {
+					if pMap, ok := part.(map[string]interface{}); ok {
+						if pMap["type"] == "text" {
+							if text, ok := pMap["text"].(string); ok {
+								contentStr += text
+							}
+						}
+					}
+				}
+			}
+			promptMessages = append(promptMessages, LLMMessage{Role: role, Content: contentStr})
+		}
+	}
+
+	reqBody := LLMRequest{
+		Model:       model,
+		Messages:    promptMessages,
+		Temperature: 0.1,
+		Stream:      false,
+	}
+
+	raw, err := callLLM(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("generate queries callLLM: %w", err)
+	}
+
+	content := strings.TrimSpace(raw)
+	content = strings.TrimPrefix(content, "```json")
+	content = strings.TrimSuffix(content, "```")
+	content = strings.TrimSpace(content)
+
+	var result SearchQueryGen
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse queries: %v\nRaw: %s", err, content)
+	}
+
+	return result.Queries, nil
+}
+
+func executeParallelSearches(queries []string, deepCrawl bool, progressCb func(string)) string {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	var allResults []SearchResult
+	var allCrawled []CrawledPage
+	seenURLs := make(map[string]bool)
+
+	for i, q := range queries {
+		wg.Add(1)
+		go func(query string, delay int) {
+			defer wg.Done()
+			
+			// Jitter delay to avoid 429
+			time.Sleep(time.Duration(delay * 500) * time.Millisecond)
+
+			if progressCb != nil {
+				progressCb(fmt.Sprintf("[search] Query %d: %q", delay+1, query))
+			}
+
+			rawHTML, err := fetchDDGHTML(query)
+			if err != nil { return }
+			
+			results, err := parseSearchResultsWithLLM(rawHTML, 3) 
+			if err != nil { return }
+
+			var localCrawled []CrawledPage
+			var localResults []SearchResult
+
+			for _, r := range results {
+				mu.Lock()
+				if seenURLs[r.URL] {
+					mu.Unlock()
+					continue 
+				}
+				seenURLs[r.URL] = true
+				mu.Unlock()
+
+				localResults = append(localResults, r)
+				
+				if deepCrawl {
+					if progressCb != nil {
+						progressCb(fmt.Sprintf("[search] Crawling: %s", r.URL))
+					}
+					page, err := crawlURL(r.URL)
+					if err == nil {
+						localCrawled = append(localCrawled, page)
+					}
+				}
+			}
+
+			mu.Lock()
+			allResults = append(allResults, localResults...)
+			allCrawled = append(allCrawled, localCrawled...)
+			mu.Unlock()
+		}(q, i)
+	}
+
+	wg.Wait()
+	
+	return buildContext(allResults, allCrawled)
 }
 
 // ─────────────────────────────────────────────

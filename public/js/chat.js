@@ -312,15 +312,7 @@ const ChatApp = (() => {
 
     try {
       let requestConfig;
-      if (webSearchEnabled) {
-        // ── Web Search path ──────────────────────────────────────────────
-        requestConfig = {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: text || ' ', deep_crawl: true }),
-          signal: abortController.signal,
-        };
-      } else if (activeDocumentNames.size > 0) {
+      if (activeDocumentNames.size > 0) {
         requestConfig = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -332,6 +324,9 @@ const ChatApp = (() => {
           signal: abortController.signal,
         };
       } else {
+        if (webSearchEnabled) {
+          formData.append('web_search', 'true');
+        }
         requestConfig = {
           method: 'POST',
           body: formData,
@@ -339,9 +334,7 @@ const ChatApp = (() => {
         };
       }
 
-      const endpoint = webSearchEnabled
-        ? '/v1/search'
-        : activeDocumentNames.size > 0
+      const endpoint = activeDocumentNames.size > 0
           ? '/v1/rag'
           : '/v1/chat/completions';
       const response = await fetch(endpoint, requestConfig);
@@ -610,16 +603,7 @@ const ChatApp = (() => {
 
     try {
       let requestConfig;
-      if (webSearchEnabled) {
-        // ── Web Search path ──────────────────────────────────────────────
-        const lastMsg = conversation[conversation.length - 1];
-        requestConfig = {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: lastMsg.content, deep_crawl: true }),
-          signal: abortController.signal,
-        };
-      } else if (activeDocumentNames.size > 0) {
+      if (activeDocumentNames.size > 0) {
         const lastMsg = conversation[conversation.length - 1];
         requestConfig = {
           method: 'POST',
@@ -632,6 +616,9 @@ const ChatApp = (() => {
           signal: abortController.signal,
         };
       } else {
+        if (webSearchEnabled) {
+          formData.append('web_search', 'true');
+        }
         requestConfig = {
           method: 'POST',
           body: formData,
@@ -639,9 +626,7 @@ const ChatApp = (() => {
         };
       }
 
-      const endpoint = webSearchEnabled
-        ? '/v1/search'
-        : activeDocumentNames.size > 0
+      const endpoint = activeDocumentNames.size > 0
           ? '/v1/rag'
           : '/v1/chat/completions';
       const response = await fetch(endpoint, requestConfig);
