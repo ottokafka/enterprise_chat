@@ -35,6 +35,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/disintegration/imaging"
 	"github.com/openai/openai-go"
@@ -352,7 +353,7 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 
 	// Extract JSON body fields (they may be JSON string values or multipart form values)
 	var rawMessages json.RawMessage
-	var maxTokens int64 = 500000
+	var maxTokens int64 = 200000
 	var stream bool
 	var model = "qwen3.5"
 	var tools json.RawMessage
@@ -503,9 +504,13 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 			flusher, canFlush = w.(http.Flusher)
 		}
 
+		var progressMu sync.Mutex
 		progressCb := func(msg string) {
 			log.Println(msg)
 			if stream {
+				progressMu.Lock()
+				defer progressMu.Unlock()
+
 				// Send as reasoning partial
 				chunk := map[string]interface{}{
 					"choices": []map[string]interface{}{

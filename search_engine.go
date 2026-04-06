@@ -343,10 +343,10 @@ Return ONLY a valid JSON array (no markdown, no explanation) with objects contai
 	}
 
 	raw, err := callLLM(reqBody)
+
 	if err != nil {
 		return nil, fmt.Errorf("LLM parse call: %w", err)
 	}
-
 	// Strip any accidental markdown fences before unmarshalling.
 	raw = strings.TrimSpace(raw)
 	raw = strings.TrimPrefix(raw, "```json")
@@ -683,6 +683,7 @@ Be accurate, concise, and helpful. If the context does not contain enough inform
 // full text content of the first choice.
 func callLLM(reqBody LLMRequest) (string, error) {
 	reqBody.Stream = false
+
 	data, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", fmt.Errorf("marshalling LLM request: %w", err)
@@ -768,6 +769,7 @@ func Search(query string, deepCrawl bool, out io.Writer, progressCb func(string)
 	if err != nil {
 		return fmt.Errorf("step2 LLM parse: %w", err)
 	}
+	fmt.Println("duck duck go", results)
 	msg = fmt.Sprintf("[search] parsed %d results", len(results))
 	log.Println(msg)
 	if progressCb != nil {
@@ -909,19 +911,40 @@ func executeParallelSearches(queries []string, deepCrawl bool, progressCb func(s
 		wg.Add(1)
 		go func(query string, delay int) {
 			defer wg.Done()
-			
+
 			// Jitter delay to avoid 429
-			time.Sleep(time.Duration(delay * 500) * time.Millisecond)
+			time.Sleep(time.Duration(delay*500) * time.Millisecond)
 
 			if progressCb != nil {
 				progressCb(fmt.Sprintf("[search] Query %d: %q", delay+1, query))
 			}
 
+			if progressCb != nil {
+				progressCb(fmt.Sprintf("[search][%d] fetching DuckDuckGo results...", delay+1))
+			}
 			rawHTML, err := fetchDDGHTML(query)
-			if err != nil { return }
-			
-			results, err := parseSearchResultsWithLLM(rawHTML, 3) 
-			if err != nil { return }
+
+			if err != nil {
+				if progressCb != nil {
+					progressCb(fmt.Sprintf("[search][%d] error fetching results: %v", delay+1, err))
+				}
+				return
+			}
+
+			if progressCb != nil {
+				progressCb(fmt.Sprintf("[search][%d] parsing results with LLM...", delay+1))
+			}
+			results, err := parseSearchResultsWithLLM(rawHTML, 3)
+			if err != nil {
+				if progressCb != nil {
+					progressCb(fmt.Sprintf("[search][%d] error parsing results: %v", delay+1, err))
+				}
+				return
+			}
+
+			if progressCb != nil {
+				progressCb(fmt.Sprintf("[search][%d] found %d results", delay+1, len(results)))
+			}
 
 			var localCrawled []CrawledPage
 			var localResults []SearchResult
@@ -930,21 +953,25 @@ func executeParallelSearches(queries []string, deepCrawl bool, progressCb func(s
 				mu.Lock()
 				if seenURLs[r.URL] {
 					mu.Unlock()
-					continue 
+					continue
 				}
 				seenURLs[r.URL] = true
 				mu.Unlock()
 
 				localResults = append(localResults, r)
-				
+
 				if deepCrawl {
 					if progressCb != nil {
-						progressCb(fmt.Sprintf("[search] Crawling: %s", r.URL))
+						progressCb(fmt.Sprintf("[search][%d] crawling: %s", delay+1, r.URL))
 					}
 					page, err := crawlURL(r.URL)
-					if err == nil {
-						localCrawled = append(localCrawled, page)
+					if err != nil {
+						if progressCb != nil {
+							progressCb(fmt.Sprintf("[search][%d] error crawling %s: %v", delay+1, r.URL, err))
+						}
+						continue
 					}
+					localCrawled = append(localCrawled, page)
 				}
 			}
 
@@ -956,7 +983,7 @@ func executeParallelSearches(queries []string, deepCrawl bool, progressCb func(s
 	}
 
 	wg.Wait()
-	
+
 	return buildContext(allResults, allCrawled)
 }
 
