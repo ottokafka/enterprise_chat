@@ -17,6 +17,7 @@ package main
 
 import (
 	"archive/zip"
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -662,5 +663,307 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 		if canFlush {
 			flusher.Flush()
 		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @route  POST /v1/messages
+// @desc   Chat completions proxy accepting Anthropic format and routing to local vLLM
+// ─────────────────────────────────────────────────────────────────────────────
+
+func anthropicChat(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Model     string           `json:"model"`
+		MaxTokens int64            `json:"max_tokens"`
+		System    any              `json:"system"`
+		Messages  []map[string]any `json:"messages"`
+		Stream    bool             `json:"stream"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error": "Invalid request"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.MaxTokens <= 0 {
+		req.MaxTokens = 200000
+	}
+
+	var openaiMessages []map[string]any
+
+	systemStr := ""
+	if s, ok := req.System.(string); ok {
+		systemStr = s
+	} else if arr, ok := req.System.([]any); ok {
+		for _, b := range arr {
+			if block, ok := b.(map[string]any); ok {
+				if t, ok := block["text"].(string); ok {
+					systemStr += t
+				}
+			}
+		}
+	}
+
+	if systemStr != "" {
+		openaiMessages = append(openaiMessages, map[string]any{
+			"role":    "system",
+			"content": systemStr,
+		})
+	}
+
+	for _, msg := range req.Messages {
+		openaiMessages = append(openaiMessages, map[string]any{
+			"role":    msg["role"],
+			"content": msg["content"],
+		})
+	}
+
+	openaiReq := map[string]any{
+		"model":      req.Model,
+		"messages":   openaiMessages,
+		"max_tokens": req.MaxTokens,
+		"stream":     req.Stream,
+	}
+
+	if req.Stream {
+		openaiReq["stream_options"] = map[string]bool{"include_usage": true}
+	}
+
+	reqBody, _ := json.Marshal(openaiReq)
+
+	baseURL := os.Getenv("MAIN_GPU_URL")
+	if !strings.HasSuffix(baseURL, "/") {
+		baseURL += "/"
+	}
+	targetURL := baseURL + "chat/completions"
+
+	httpReq, err := http.NewRequestWithContext(context.Background(), "POST", targetURL, bytes.NewBuffer(reqBody))
+	if err != nil {
+		http.Error(w, `{"error": "Failed to create upstream request"}`, http.StatusInternalServerError)
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+os.Getenv("OPENAI_API_KEY"))
+
+	client := &http.Client{}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		log.Printf("[anthropic-proxy] Error: %v\n", err)
+		http.Error(w, `{"error":"Upstream connection failed"}`, http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		http.Error(w, string(bodyBytes), resp.StatusCode)
+		return
+	}
+
+	if !req.Stream {
+		var openaiResp struct {
+			ID      string `json:"id"`
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+				FinishReason string `json:"finish_reason"`
+			} `json:"choices"`
+			Usage struct {
+				PromptTokens     int `json:"prompt_tokens"`
+				CompletionTokens int `json:"completion_tokens"`
+			} `json:"usage"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&openaiResp); err != nil {
+			http.Error(w, `{"error":"Failed to decode upstream response"}`, http.StatusInternalServerError)
+			return
+		}
+
+		var contentStr string
+		var stopReason = "end_turn"
+		if len(openaiResp.Choices) > 0 {
+			contentStr = openaiResp.Choices[0].Message.Content
+			if openaiResp.Choices[0].FinishReason == "length" {
+				stopReason = "max_tokens"
+			}
+		}
+
+		anthropicResp := map[string]any{
+			"id":            openaiResp.ID,
+			"type":          "message",
+			"role":          "assistant",
+			"model":         req.Model,
+			"content": []map[string]any{
+				{
+					"type": "text",
+					"text": contentStr,
+				},
+			},
+			"stop_reason":   stopReason,
+			"stop_sequence": nil,
+			"usage": map[string]any{
+				"input_tokens":                openaiResp.Usage.PromptTokens,
+				"output_tokens":               openaiResp.Usage.CompletionTokens,
+				"cache_creation_input_tokens": 0,
+				"cache_read_input_tokens":     0,
+			},
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(anthropicResp)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	if origin := r.Header.Get("Origin"); origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+	} else {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	}
+
+	flusher, canFlush := w.(http.Flusher)
+
+	msgStart := map[string]any{
+		"type": "message_start",
+		"message": map[string]any{
+			"id":            "msg_anthropic_proxy",
+			"type":          "message",
+			"role":          "assistant",
+			"model":         req.Model,
+			"content":       []any{},
+			"stop_reason":   nil,
+			"stop_sequence": nil,
+			"usage": map[string]any{
+				"input_tokens":                0,
+				"output_tokens":               0,
+				"cache_creation_input_tokens": 0,
+				"cache_read_input_tokens":     0,
+			},
+		},
+	}
+	msgStartJSON, _ := json.Marshal(msgStart)
+	fmt.Fprintf(w, "event: message_start\ndata: %s\n\n", msgStartJSON)
+
+	blockStart := map[string]any{
+		"type":  "content_block_start",
+		"index": 0,
+		"content_block": map[string]any{
+			"type": "text",
+			"text": "",
+		},
+	}
+	blockStartJSON, _ := json.Marshal(blockStart)
+	fmt.Fprintf(w, "event: content_block_start\ndata: %s\n\n", blockStartJSON)
+
+	if canFlush {
+		flusher.Flush()
+	}
+
+	var stopReason string
+	var completionTokens int
+	var promptTokens int
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		dataStr := strings.TrimPrefix(line, "data: ")
+		if dataStr == "[DONE]" {
+			break
+		}
+
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+				FinishReason *string `json:"finish_reason"`
+			} `json:"choices"`
+			Usage *struct {
+				PromptTokens     int `json:"prompt_tokens"`
+				CompletionTokens int `json:"completion_tokens"`
+			} `json:"usage"`
+		}
+
+		if err := json.Unmarshal([]byte(dataStr), &chunk); err != nil {
+			log.Printf("[anthropic-proxy] stream parse error: %v", err)
+			continue
+		}
+
+		if chunk.Usage != nil {
+			promptTokens = chunk.Usage.PromptTokens
+			completionTokens = chunk.Usage.CompletionTokens
+		}
+
+		if len(chunk.Choices) > 0 {
+			delta := chunk.Choices[0].Delta.Content
+			if delta != "" {
+				deltaEvent := map[string]any{
+					"type":  "content_block_delta",
+					"index": 0,
+					"delta": map[string]any{
+						"type": "text_delta",
+						"text": delta,
+					},
+				}
+				deltaJSON, _ := json.Marshal(deltaEvent)
+				fmt.Fprintf(w, "event: content_block_delta\ndata: %s\n\n", deltaJSON)
+				if canFlush {
+					flusher.Flush()
+				}
+			}
+			if chunk.Choices[0].FinishReason != nil {
+				reason := *chunk.Choices[0].FinishReason
+				if reason == "stop" {
+					stopReason = "end_turn"
+				} else if reason == "length" {
+					stopReason = "max_tokens"
+				} else if reason != "" {
+					stopReason = reason
+				}
+			}
+		}
+	}
+
+	if stopReason == "" {
+		stopReason = "end_turn"
+	}
+
+	blockStop := map[string]any{
+		"type":  "content_block_stop",
+		"index": 0,
+	}
+	blockStopJSON, _ := json.Marshal(blockStop)
+	fmt.Fprintf(w, "event: content_block_stop\ndata: %s\n\n", blockStopJSON)
+
+	messageDelta := map[string]any{
+		"type": "message_delta",
+		"delta": map[string]any{
+			"stop_reason": stopReason,
+		},
+		"usage": map[string]any{
+			"input_tokens":                promptTokens,
+			"output_tokens":               completionTokens,
+			"cache_creation_input_tokens": 0,
+			"cache_read_input_tokens":     0,
+		},
+	}
+	messageDeltaJSON, _ := json.Marshal(messageDelta)
+	fmt.Fprintf(w, "event: message_delta\ndata: %s\n\n", messageDeltaJSON)
+
+	msgStop := map[string]any{
+		"type": "message_stop",
+	}
+	msgStopJSON, _ := json.Marshal(msgStop)
+	fmt.Fprintf(w, "event: message_stop\ndata: %s\n\n", msgStopJSON)
+
+	if canFlush {
+		flusher.Flush()
 	}
 }

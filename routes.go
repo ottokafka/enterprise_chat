@@ -45,7 +45,8 @@ func InitRoutes() *http.ServeMux {
 	// mux.Handle("POST /v1/music/generations", ApiAuthMiddleware(http.HandlerFunc(generateMusicHandler)))
 	mux.Handle("POST /v1/images/generations", ApiAuthMiddleware(http.HandlerFunc(imageGenerate)))
 	mux.Handle("POST /v1/chat/completions", ApiAuthMiddleware(http.HandlerFunc(llamaChat)))
-	mux.Handle("POST /v1/embeddings", http.HandlerFunc(textEmbedding)) // text embedding doesn't use apiAuth in routes.js
+	mux.Handle("POST /v1/messages", ApiAuthMiddleware(http.HandlerFunc(anthropicChat))) // Claude code anthropic support
+	mux.Handle("POST /v1/embeddings", http.HandlerFunc(textEmbedding))                  // text embedding doesn't use apiAuth in routes.js
 
 	// RAG Document Ingestion
 	mux.Handle("POST /v1/ingest", ApiAuthMiddleware(http.HandlerFunc(ingestDocument)))

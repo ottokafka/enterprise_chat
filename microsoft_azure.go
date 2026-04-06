@@ -254,6 +254,10 @@ func insertApiChat(userId int, usageType string) error {
 func ApiAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			// Claude code anthropic support
+			authHeader = r.Header.Get("x-api-key")
+		}
 
 		var userId int = 0
 		session, _ := Store.Get(r, "session")
