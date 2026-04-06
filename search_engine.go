@@ -13,11 +13,13 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/chromedp/chromedp"
 	readability "github.com/go-shiori/go-readability"
 )
@@ -314,51 +316,37 @@ func fetchDDGHTML(query string) (string, error) {
 }
 
 // ─────────────────────────────────────────────
-// Step 2: LLM-Driven Search Parsing
+// Step 2: Deterministic Search Parsing
 // ─────────────────────────────────────────────
 
-// parseSearchResultsWithLLM sends the raw DDG HTML to the LLM and
-// returns the top N structured search results.
-func parseSearchResultsWithLLM(rawHTML string, topN int) ([]SearchResult, error) {
-	systemPrompt := `You are an HTML parser assistant.
-Extract search results from the provided DuckDuckGo Lite HTML page.
-Return ONLY a valid JSON array (no markdown, no explanation) with objects containing exactly these fields:
-  "title"   – the result link text
-  "snippet" – the short description/excerpt
-  "url"     – the full destination URL`
-
-	userPrompt := fmt.Sprintf(
-		"Extract the top %d search results from this HTML and return a JSON array:\n\n%s",
-		topN, rawHTML,
-	)
-
-	reqBody := LLMRequest{
-		Model: searchLLMModel(),
-		Messages: []LLMMessage{
-			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: userPrompt},
-		},
-		Temperature: 0.0, // deterministic for structured extraction
-		Stream:      false,
-	}
-
-	raw, err := callLLM(reqBody)
-
-	if err != nil {
-		return nil, fmt.Errorf("LLM parse call: %w", err)
-	}
-	// Strip any accidental markdown fences before unmarshalling.
-	raw = strings.TrimSpace(raw)
-	raw = strings.TrimPrefix(raw, "```json")
-	raw = strings.TrimPrefix(raw, "```")
-	raw = strings.TrimSuffix(raw, "```")
-	raw = strings.TrimSpace(raw)
-
+// extractResults uses goquery to deterministically parse DuckDuckGo Lite HTML.
+func extractResults(rawHTML string) []SearchResult {
+	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(rawHTML))
 	var results []SearchResult
-	if err := json.Unmarshal([]byte(raw), &results); err != nil {
-		return nil, fmt.Errorf("parsing LLM JSON response: %w\nRaw: %s", err, raw)
+
+	doc.Find(".result-link").Each(func(i int, s *goquery.Selection) {
+		title := s.Text()
+		link, _ := s.Attr("href")
+		snippet := s.Closest("tr").Next().Find(".result-snippet").Text()
+
+		results = append(results, SearchResult{
+			Title:   strings.TrimSpace(title),
+			URL:     link,
+			Snippet: strings.TrimSpace(snippet),
+		})
+	})
+	return results
+}
+
+func sanitizeText(input string) string {
+	// 1. Remove excessive whitespace
+	re := regexp.MustCompile(`\s+`)
+	output := re.ReplaceAllString(input, " ")
+	// 2. Limit maximum length of a single source to 6,000 chars (~1.5k tokens)
+	if len(output) > 6000 {
+		output = output[:6000] + "..."
 	}
-	return results, nil
+	return strings.TrimSpace(output)
 }
 
 // ─────────────────────────────────────────────
@@ -577,28 +565,28 @@ func crawlURL(pageURL string) (CrawledPage, error) {
 // Step 4: Synthesise & Stream Final Answer
 // ─────────────────────────────────────────────
 
-// buildContext assembles search snippets and crawled page content
-// into a single context block for the conversational LLM.
-func buildContext(results []SearchResult, crawled []CrawledPage) string {
+// buildSafeContext implements Budget-Aware Context Building.
+func buildSafeContext(results []SearchResult, crawled []CrawledPage, maxChars int) string {
 	var sb strings.Builder
 
-	sb.WriteString("## Search Results\n\n")
+	// 1. Always include Search Snippets (Essential metadata)
+	sb.WriteString("# SEARCH RESULTS\n")
 	for i, r := range results {
-		sb.WriteString(fmt.Sprintf("**[%d] %s** (%s)\n%s\n\n", i+1, r.Title, r.URL, r.Snippet))
+		sb.WriteString(fmt.Sprintf("[%d] %s: %s\n", i+1, r.Title, r.Snippet))
 	}
 
-	if len(crawled) > 0 {
-		sb.WriteString("## Crawled Page Content\n\n")
-		for _, p := range crawled {
-			// Truncate very long pages to avoid exhausting the context window.
-			content := p.Content
-			if len(content) > 8000 {
-				content = content[:8000] + "\n[…truncated…]"
-			}
-			sb.WriteString(fmt.Sprintf("### %s\nSource: %s\n\n%s\n\n---\n\n", p.Title, p.URL, content))
+	// 2. Conditionally add Crawled Pages until budget is exhausted
+	sb.WriteString("\n# PAGE CONTENT\n")
+	for _, page := range crawled {
+		entry := fmt.Sprintf("Source [%s]: %s\n", page.URL, sanitizeText(page.Content))
+
+		// Check if adding this page exceeds our char-limit (proxy for tokens)
+		if sb.Len()+len(entry) > maxChars {
+			sb.WriteString("\n[Remaining sources omitted to fit context window]")
+			break
 		}
+		sb.WriteString(entry)
 	}
-
 	return sb.String()
 }
 
@@ -759,18 +747,17 @@ func Search(query string, deepCrawl bool, out io.Writer, progressCb func(string)
 		return fmt.Errorf("step1 DDG fetch: %w", err)
 	}
 
-	// ── Step 2: LLM-powered parsing ──────────────────────────────────────
-	msg = "[search] parsing results with LLM…"
+	// ── Step 2: Deterministic Search Parsing ─────────────────────────────
+	msg = "[search] extracting results…"
 	log.Println(msg)
 	if progressCb != nil {
 		progressCb(msg)
 	}
-	results, err := parseSearchResultsWithLLM(rawHTML, defaultTopN)
-	if err != nil {
-		return fmt.Errorf("step2 LLM parse: %w", err)
+	results := extractResults(rawHTML)
+	if len(results) > defaultTopN {
+		results = results[:defaultTopN]
 	}
-	fmt.Println("duck duck go", results)
-	msg = fmt.Sprintf("[search] parsed %d results", len(results))
+	msg = fmt.Sprintf("[search] extracted %d results", len(results))
 	log.Println(msg)
 	if progressCb != nil {
 		progressCb(msg)
@@ -828,7 +815,7 @@ func Search(query string, deepCrawl bool, out io.Writer, progressCb func(string)
 	if progressCb != nil {
 		progressCb(msg)
 	}
-	ctx := buildContext(results, crawled)
+	ctx := buildSafeContext(results, crawled, 32000)
 	if err := streamAnswer(query, ctx, results, out); err != nil {
 		return fmt.Errorf("step4 stream: %w", err)
 	}
@@ -932,14 +919,11 @@ func executeParallelSearches(queries []string, deepCrawl bool, progressCb func(s
 			}
 
 			if progressCb != nil {
-				progressCb(fmt.Sprintf("[search][%d] parsing results with LLM...", delay+1))
+				progressCb(fmt.Sprintf("[search][%d] extracting results...", delay+1))
 			}
-			results, err := parseSearchResultsWithLLM(rawHTML, 3)
-			if err != nil {
-				if progressCb != nil {
-					progressCb(fmt.Sprintf("[search][%d] error parsing results: %v", delay+1, err))
-				}
-				return
+			results := extractResults(rawHTML)
+			if len(results) > 3 {
+				results = results[:3]
 			}
 
 			if progressCb != nil {
@@ -984,24 +968,5 @@ func executeParallelSearches(queries []string, deepCrawl bool, progressCb func(s
 
 	wg.Wait()
 
-	return buildContext(allResults, allCrawled)
-}
-
-// ─────────────────────────────────────────────
-// Demo main (remove or guard with build tag in production)
-// ─────────────────────────────────────────────
-
-func test_search() {
-	// Kick off the header manager. On machines with Chromium installed this
-	// extracts real native headers immediately and refreshes them every 24h.
-	// On headless/minimal containers it is a no-op and the static seed is used.
-	StartHeaderManager()
-
-	query := "RTX 4090 48 GB custom"
-	fmt.Printf("🔍 Searching: %q\n\n", query)
-
-	// Set deepCrawl=true to trigger Chromedp/HTTP fallback + Readability extraction.
-	if err := Search(query, true, log.Writer(), nil); err != nil {
-		log.Fatalf("search failed: %v", err)
-	}
+	return buildSafeContext(allResults, allCrawled, 32000)
 }
