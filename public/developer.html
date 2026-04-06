@@ -301,7 +301,7 @@
       <!-- Normal Chat -->
       <h2>Normal Chat Completion</h2>
       <p class="section-desc">Generate conversational responses from the standard text model using a messages array.</p>
-      <pre><code class="language-bash example-code">curl https://alice.forest-interactive.com/v1/chat/completions \
+      <pre><code class="language-bash example-code">curl http://localhost:4445/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
   -d '{
@@ -325,7 +325,7 @@
       <h2>Chat completions with File Uploads</h2>
       <p class="section-desc">Upload files (PDF, XLSX, Images, etc.) alongside your messages using
         <code>multipart/form-data</code>.</p>
-      <pre><code class="language-bash example-code">curl https://alice.forest-interactive.com/v1/chat/completions \
+      <pre><code class="language-bash example-code">curl http://localhost:4445/v1/chat/completions \
   -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
   -F "model=qwen3.5" \
   -F 'messages=[{"role": "user", "content": "Analyze these files."}]' \
@@ -344,7 +344,7 @@
       <!-- Multimodal -->
       <h2>Multimodal with Vision</h2>
       <p class="section-desc">Pass images alongside text to the model for visual understanding and reasoning.</p>
-      <pre><code class="language-bash example-code">curl https://alice.forest-interactive.com/v1/chat/completions \
+      <pre><code class="language-bash example-code">curl http://localhost:4445/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
   -d '{
@@ -368,12 +368,61 @@
     "finish_reason": "stop"
   }]
 }</code></pre>
+      
+      <!-- Anthropic Compatibility -->
+      <h2>Anthropic Claude Compatibility</h2>
+      <p class="section-desc">Full compatibility with Anthropic SDKs and libraries using the <code>/v1/messages</code> endpoint. Supports both base64 and remote URL vision blocks.</p>
+      <pre><code class="language-bash example-code">curl http://localhost:4445/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: <span class="api-key-placeholder">API_KEY</span>" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{
+    "model": "claude-3-opus-20240229",
+    "max_tokens": 1024,
+    "system": "You are a helpful assistant.",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "image",
+            "source": {
+              "type": "url",
+              "url": "https://upload.wikimedia.org/wikipedia/commons/a/a7/Camponotus_flavomarginatus_ant.jpg"
+            }
+          },
+          {
+            "type": "text",
+            "text": "What is in this image?"
+          }
+        ]
+      }
+    ]
+  }'</code></pre>
+      <div class="response-label">Response</div>
+      <pre><code class="language-json">{
+  "id": "msg_01XFDUDYJgAACzvnptvVoYEL",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "This image shows an ant close-up..."
+    }
+  ],
+  "model": "claude-3-opus-20240229",
+  "stop_reason": "end_turn",
+  "usage": {
+    "input_tokens": 1551,
+    "output_tokens": 71
+  }
+}</code></pre>
 
       <!-- Embeddings -->
       <h2>Embeddings</h2>
       <p class="section-desc">Convert text strings into vector representations for vector search and retrieval tasks.
       </p>
-      <pre><code class="language-bash example-code">curl https://alice.forest-interactive.com/v1/embeddings \
+      <pre><code class="language-bash example-code">curl http://localhost:4445/v1/embeddings \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
   -d '{
@@ -403,7 +452,7 @@
       <!-- Image Gen -->
       <h2>Image Generation</h2>
       <p class="section-desc">Generate images from a textual input prompt, returned as base64 encoded strings.</p>
-      <pre><code class="language-bash example-code">curl https://alice.forest-interactive.com/v1/images/generations \
+      <pre><code class="language-bash example-code">curl http://localhost:4445/v1/images/generations \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
   -d '{
@@ -420,7 +469,7 @@
       <!-- Rerank -->
       <h2>Document Reranking</h2>
       <p class="section-desc">Re-score and rank a list of documents based on their relevance to a search query.</p>
-      <pre><code class="language-bash example-code">curl -X POST https://alice.forest-interactive.com/v1/rerank \
+      <pre><code class="language-bash example-code">curl -X POST http://localhost:4445/v1/rerank \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
   -d '{
@@ -448,7 +497,7 @@
       <h2>RAG Pipeline (Retrieve → Augment → Generate)</h2>
       <p class="section-desc">Search through your indexed documents and generate an answer based on the retrieved
         context.</p>
-      <pre><code class="language-bash example-code">curl -X POST https://alice.forest-interactive.com/v1/rag \
+      <pre><code class="language-bash example-code">curl -X POST http://localhost:4445/v1/rag \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
   -d '{

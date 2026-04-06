@@ -37,6 +37,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/disintegration/imaging"
 	"github.com/openai/openai-go"
@@ -666,6 +667,44 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func fetchAnthropicURLImage(imageURL string) (string, error) {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	req, err := http.NewRequest("GET", imageURL, nil)
+	if err != nil {
+		return "", err
+	}
+	// Many CDNs reject requests with no User-Agent
+	req.Header.Set("User-Agent", "EnterpriseChatProxy/1.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("bad status %d", resp.StatusCode)
+	}
+
+	// Limit read to 20MB
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 20<<20))
+	if err != nil {
+		return "", err
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" || contentType == "application/octet-stream" {
+		contentType = http.DetectContentType(bodyBytes)
+	}
+
+	b64 := base64.StdEncoding.EncodeToString(bodyBytes)
+	dataURI := fmt.Sprintf("data:%s;base64,%s", contentType, b64)
+
+	return dataURI, nil
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // @route  POST /v1/messages
 // @desc   Chat completions proxy accepting Anthropic format and routing to local vLLM
@@ -712,9 +751,56 @@ func anthropicChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, msg := range req.Messages {
+		content := msg["content"]
+
+		if contentArr, ok := content.([]any); ok {
+			var newContent []map[string]any
+			for _, item := range contentArr {
+				if block, ok := item.(map[string]any); ok {
+					blockType, _ := block["type"].(string)
+
+					if blockType == "text" {
+						newContent = append(newContent, map[string]any{
+							"type": "text",
+							"text": block["text"],
+						})
+					} else if blockType == "image" {
+						if source, ok := block["source"].(map[string]any); ok {
+							sourceType, _ := source["type"].(string)
+							if sourceType == "base64" {
+								mediaType, _ := source["media_type"].(string)
+								data, _ := source["data"].(string)
+								dataURI := fmt.Sprintf("data:%s;base64,%s", mediaType, data)
+								newContent = append(newContent, map[string]any{
+									"type": "image_url",
+									"image_url": map[string]string{
+										"url": dataURI,
+									},
+								})
+							} else if sourceType == "url" {
+								url, _ := source["url"].(string)
+								dataURI, err := fetchAnthropicURLImage(url)
+								if err != nil {
+									log.Printf("[anthropic-proxy] image fetch failed: %v", err)
+									continue
+								}
+								newContent = append(newContent, map[string]any{
+									"type": "image_url",
+									"image_url": map[string]string{
+										"url": dataURI,
+									},
+								})
+							}
+						}
+					}
+				}
+			}
+			content = newContent
+		}
+
 		openaiMessages = append(openaiMessages, map[string]any{
 			"role":    msg["role"],
-			"content": msg["content"],
+			"content": content,
 		})
 	}
 

@@ -54,10 +54,6 @@ func imageGenerate(w http.ResponseWriter, r *http.Request) {
 
 	// Determine endpoint URL
 	imageGenURL := os.Getenv("IMAGE_GEN_URL")
-	if imageGenURL == "" {
-		// Default to the one provided in the curl example if env is missing
-		imageGenURL = "https://alice.forest-interactive.com/v1"
-	}
 	fullURL := imageGenURL + "/images/generations"
 
 	// Authorization

@@ -21,7 +21,7 @@ func getClickhouseClient() clickhouse.Conn {
 func InitClickhouse() {
 	dsn := os.Getenv("CLICKHOUSE_URL")
 	if dsn == "" {
-		dsn = "clickhouse://admin:admin@10.90.24.27:9000"
+		dsn = "clickhouse://admin:admin@localhost:9000"
 		log.Println("CLICKHOUSE_URL environment variable is not set, using fallback: " + dsn)
 	}
 

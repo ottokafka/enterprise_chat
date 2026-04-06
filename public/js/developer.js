@@ -118,7 +118,11 @@ function updatePlaceholders() {
         temp.querySelectorAll('.api-key-placeholder').forEach(el => {
           el.textContent = activeKey;
         });
-        block.innerHTML = temp.innerHTML;
+        // Dynamically update the domain to match current origin
+        let html = temp.innerHTML;
+        const currentOrigin = window.location.origin;
+        html = html.replace(/http:\/\/localhost:4445/g, currentOrigin);
+        block.innerHTML = html;
         hljs.highlightElement(block);
       }
     });
