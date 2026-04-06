@@ -346,7 +346,7 @@ func processIncomingFile(filename, contentType string, data []byte) ([]processed
 // @access Private (apiAuth)
 // ─────────────────────────────────────────────────────────────────────────────
 
-func llamaChat(w http.ResponseWriter, r *http.Request) {
+func openAiChat(w http.ResponseWriter, r *http.Request) {
 	// Parse the multipart form — multer sends files + JSON fields
 	if err := r.ParseMultipartForm(MaxUploadBytes); err != nil {
 		// Not multipart — try JSON body
@@ -876,10 +876,10 @@ func anthropicChat(w http.ResponseWriter, r *http.Request) {
 		}
 
 		anthropicResp := map[string]any{
-			"id":            openaiResp.ID,
-			"type":          "message",
-			"role":          "assistant",
-			"model":         req.Model,
+			"id":    openaiResp.ID,
+			"type":  "message",
+			"role":  "assistant",
+			"model": req.Model,
 			"content": []map[string]any{
 				{
 					"type": "text",

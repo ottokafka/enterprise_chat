@@ -37,7 +37,7 @@ import "sync"
 
 We must intercept the standard chat completion pipeline to silently inject the newly scraped web context.
 
-**Modifications to `llamaChat`:**
+**Modifications to `openAiChat`:**
 1. **Trigger Condition**: Detect if Web Search is requested (e.g., the frontend passes `model="web-search-agent"` or a custom `web_search=true` parameter in the payload).
 2. **Pipeline Interception**: 
    - Execute `generateSearchQueries` using the unmarshalled `messages` array.
@@ -47,7 +47,7 @@ We must intercept the standard chat completion pipeline to silently inject the n
 4. **Execution**: The normal `llmClient.Chat.Completions.NewStreaming` routine continues executing normally, but the user's prompt is now loaded invisibly with recent, deduped web search context.
 
 *Key considerations during manipulation:*
-The `llamaChat` method parses both `multipart/form-data` and generic JSON bodies. The interception logic must be placed right before calling `llmClient.Chat.Completions.New(...)` (or `NewStreaming(...)`), ensuring attachments and previous message states are fully parsed.
+The `openAiChat` method parses both `multipart/form-data` and generic JSON bodies. The interception logic must be placed right before calling `llmClient.Chat.Completions.New(...)` (or `NewStreaming(...)`), ensuring attachments and previous message states are fully parsed.
 
 
 ### 3. `public/js/chat.js` (Frontend Routing)
@@ -64,7 +64,7 @@ const response = await fetch(endpoint, requestConfig);
 ```
 
 **Modifications to `ChatApp` logic:**
-To leverage the Query Expansion RAG pipeline integrated into `llamaChat`, we either:
+To leverage the Query Expansion RAG pipeline integrated into `openAiChat`, we either:
 - Continue pointing `/v1/search` to an isolated handler that executes this new pipeline and returns a stream.
 - **(Recommended)** Unify the frontend to point towards `/v1/chat/completions` and denote intent using a custom flag in `formData.append('web_search', 'true')` 
 

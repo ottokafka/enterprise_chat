@@ -15,21 +15,21 @@ import (
 var Store *sessions.CookieStore
 
 func InitSessionStore() {
-    secret := os.Getenv("EXPRESS_SESSION_SECRET")
-    if secret == "" {
-        secret = "Who_give_a_fuck"
-    }
-    
-    // CookieStore is fine for holding small states.
-    Store = sessions.NewCookieStore([]byte(secret))
-    
-    // Configure matching the JS settings
-    Store.Options = &sessions.Options{
-        Path:     "/",
-        MaxAge:   90 * 24 * 60 * 60, // approx 3 months
-        HttpOnly: true,
-        Secure:   false, // per the JS code `secure_cookie = false`
-    }
+	secret := os.Getenv("EXPRESS_SESSION_SECRET")
+	if secret == "" {
+		secret = "Who_give_a_fuck"
+	}
+
+	// CookieStore is fine for holding small states.
+	Store = sessions.NewCookieStore([]byte(secret))
+
+	// Configure matching the JS settings
+	Store.Options = &sessions.Options{
+		Path:     "/",
+		MaxAge:   90 * 24 * 60 * 60, // approx 3 months
+		HttpOnly: true,
+		Secure:   false, // per the JS code `secure_cookie = false`
+	}
 }
 
 // GlobalMiddleware wraps all requests to log them (like the express middleware).
@@ -50,7 +50,7 @@ func GlobalMiddleware(next http.Handler) http.Handler {
 // In Go, multipart/form-data file uploads are handled natively by net/http via
 // r.ParseMultipartForm(maxBytes). No third-party library is needed.
 //
-// The handlers that need file access (llamaChat, ingestDocument) call
+// The handlers that need file access (openAiChat, ingestDocument) call
 // r.ParseMultipartForm themselves. This helper wraps any such handler with a
 // generous 512 MB body limit consistent with the Node.js app's 50 MB JSON limit
 // but allowing for large file uploads.
