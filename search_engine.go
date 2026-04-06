@@ -460,14 +460,12 @@ func (e *cfBlockedError) Error() string {
 }
 
 // checkCloudflareBlock issues a HEAD request with stealth headers and inspects
-// the response for Cloudflare/WAF signals before spending time on a full
-// Chromium session or body read.
+// the response for Cloudflare/WAF signals or any bad HTTP status code (>= 400).
 //
 // Detection layers (cheapest first):
-//  1. HTTP 403 Forbidden
-//  2. HTTP 429 Too Many Requests
-//  3. cf-mitigated header present (active Cloudflare challenge)
-//  4. cf-ray header + non-2xx status (Cloudflare edge rejected the request)
+//  1. HTTP >= 400 (Any error status like 403, 404, 429, 500)
+//  2. cf-mitigated header present (active Cloudflare challenge)
+//  3. cf-ray header + non-2xx status (Cloudflare edge rejected the request)
 func checkCloudflareBlock(pageURL string) error {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
@@ -495,11 +493,8 @@ func checkCloudflareBlock(pageURL string) error {
 	defer resp.Body.Close()
 
 	// ── 1 & 2: Hard status-code checks ───────────────────────────────────
-	switch resp.StatusCode {
-	case http.StatusForbidden: // 403
-		return &cfBlockedError{URL: pageURL, Status: resp.StatusCode, Reason: "403 Forbidden"}
-	case http.StatusTooManyRequests: // 429
-		return &cfBlockedError{URL: pageURL, Status: resp.StatusCode, Reason: "429 Too Many Requests"}
+	if resp.StatusCode >= 400 {
+		return &cfBlockedError{URL: pageURL, Status: resp.StatusCode, Reason: fmt.Sprintf("HTTP %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))}
 	}
 
 	// ── 3: cf-mitigated – active Cloudflare challenge in progress ─────────
@@ -763,8 +758,10 @@ func Search(query string, deepCrawl bool, out io.Writer, progressCb func(string)
 		progressCb(msg)
 	}
 
-	// ── Step 3  Deep crawl ────────────────────────────────────
+	// ── Step 3  Deep crawl / Filter ────────────────────────────────────
 	var crawled []CrawledPage
+	var allowedResults []SearchResult
+
 	if deepCrawl {
 		msg = "[search] starting deep crawl…"
 		log.Println(msg)
@@ -775,8 +772,6 @@ func Search(query string, deepCrawl bool, out io.Writer, progressCb func(string)
 		// allowedResults tracks only URLs that passed the pre-flight and were
 		// successfully crawled. Blocked or errored entries are excluded so their
 		// URLs and text never appear in citations or the LLM context.
-		var allowedResults []SearchResult
-
 		for _, r := range results {
 			if r.URL == "" {
 				continue
@@ -799,15 +794,30 @@ func Search(query string, deepCrawl bool, out io.Writer, progressCb func(string)
 			allowedResults = append(allowedResults, r)
 			crawled = append(crawled, page)
 		}
-
-		// Replace with the clean set so citations only reference reachable sources.
-		results = allowedResults
 		msg = fmt.Sprintf("[search] crawled %d/%d pages", len(crawled), defaultTopN)
 		log.Println(msg)
 		if progressCb != nil {
 			progressCb(msg)
 		}
+	} else {
+		for _, r := range results {
+			if r.URL == "" {
+				continue
+			}
+			// Pre-flight check even if not deep crawling to exclude blocked sites
+			if err := checkCloudflareBlock(r.URL); err != nil {
+				var cfErr *cfBlockedError
+				if errors.As(err, &cfErr) {
+					log.Printf("[search] skipping blocked URL %s: %s", r.URL, cfErr.Reason)
+				}
+				continue
+			}
+			allowedResults = append(allowedResults, r)
+		}
 	}
+
+	// Replace with the clean set so citations only reference reachable sources.
+	results = allowedResults
 
 	// ── Step 4: Synthesise & stream ───────────────────────────────────────
 	msg = "[search] streaming final answer…"
@@ -886,7 +896,7 @@ Output ONLY valid JSON in this format: {"queries": ["query1", "query2"]}`
 	return result.Queries, nil
 }
 
-func executeParallelSearches(queries []string, deepCrawl bool, progressCb func(string)) string {
+func executeParallelSearches(queries []string, deepCrawl bool, progressCb func(string)) (string, []SearchResult) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
@@ -942,20 +952,37 @@ func executeParallelSearches(queries []string, deepCrawl bool, progressCb func(s
 				seenURLs[r.URL] = true
 				mu.Unlock()
 
-				localResults = append(localResults, r)
-
 				if deepCrawl {
 					if progressCb != nil {
 						progressCb(fmt.Sprintf("[search][%d] crawling: %s", delay+1, r.URL))
 					}
 					page, err := crawlURL(r.URL)
 					if err != nil {
-						if progressCb != nil {
-							progressCb(fmt.Sprintf("[search][%d] error crawling %s: %v", delay+1, r.URL, err))
+						var cfErr *cfBlockedError
+						if errors.As(err, &cfErr) {
+							if progressCb != nil {
+								progressCb(fmt.Sprintf("[search][%d] skipping blocked URL %s: %s", delay+1, r.URL, cfErr.Reason))
+							}
+						} else {
+							if progressCb != nil {
+								progressCb(fmt.Sprintf("[search][%d] error crawling %s: %v", delay+1, r.URL, err))
+							}
 						}
+						// URL failed, do not add to localResults
 						continue
 					}
 					localCrawled = append(localCrawled, page)
+					localResults = append(localResults, r)
+				} else {
+					// Pre-flight check even if not deep crawling to exclude blocked sites
+					if err := checkCloudflareBlock(r.URL); err != nil {
+						var cfErr *cfBlockedError
+						if errors.As(err, &cfErr) && progressCb != nil {
+							progressCb(fmt.Sprintf("[search][%d] skipping blocked URL %s: %s", delay+1, r.URL, cfErr.Reason))
+						}
+						continue
+					}
+					localResults = append(localResults, r)
 				}
 			}
 
@@ -968,5 +995,5 @@ func executeParallelSearches(queries []string, deepCrawl bool, progressCb func(s
 
 	wg.Wait()
 
-	return buildSafeContext(allResults, allCrawled, 32000)
+	return buildSafeContext(allResults, allCrawled, 32000), allResults
 }

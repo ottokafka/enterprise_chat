@@ -496,6 +496,8 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 	// ==========================================
 	// 🔍 WEB SEARCH PIPELINE INTERCEPTION
 	// ==========================================
+	var finalWebResults []SearchResult
+
 	if webSearch && len(messages) > 0 {
 		var flusher http.Flusher
 		var canFlush bool
@@ -542,7 +544,10 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 		)
 
 		if err == nil && len(queries) > 0 {
-			contextText := executeParallelSearches(queries, true, progressCb)
+			var webResults []SearchResult
+			var contextText string
+			contextText, webResults = executeParallelSearches(queries, true, progressCb)
+			finalWebResults = webResults
 
 			injection := fmt.Sprintf("\n\n--- REAL-TIME WEB SEARCH CONTEXT ---\n%s\n\nPlease answer my question using the context above. Cite sources as [N].", contextText)
 
@@ -604,6 +609,16 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"Chat completion failed"}`, http.StatusInternalServerError)
 			return
 		}
+
+		if len(finalWebResults) > 0 && len(resp.Choices) > 0 {
+			var sb strings.Builder
+			sb.WriteString("\n\n---\n**Sources:**\n")
+			for i, r := range finalWebResults {
+				sb.WriteString(fmt.Sprintf("[%d] [%s](%s)\n", i+1, r.Title, r.URL))
+			}
+			resp.Choices[0].Message.Content += sb.String()
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 		return
@@ -624,5 +639,28 @@ func llamaChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := streamResp.Err(); err != nil {
 		log.Printf("[chat] Stream error: %v\n", err)
+	}
+
+	if len(finalWebResults) > 0 {
+		var sb strings.Builder
+		sb.WriteString("\n\n---\n**Sources:**\n")
+		for i, r := range finalWebResults {
+			sb.WriteString(fmt.Sprintf("[%d] [%s](%s)\n", i+1, r.Title, r.URL))
+		}
+
+		chunk := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{
+					"delta": map[string]interface{}{
+						"content": sb.String(),
+					},
+				},
+			},
+		}
+		raw, _ := json.Marshal(chunk)
+		fmt.Fprintf(w, "data: %s\n\n", raw)
+		if canFlush {
+			flusher.Flush()
+		}
 	}
 }
