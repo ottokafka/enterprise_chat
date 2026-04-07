@@ -1504,15 +1504,17 @@ const ChatApp = (() => {
   }
 
   let currentShareDocId = null;
+  let checkedShareUserIds = new Set();
 
   async function openShareModal(docId, isGlobal, sharedWithIds) {
     currentShareDocId = docId;
+    checkedShareUserIds = new Set(sharedWithIds || []);
     const modal = document.getElementById('share-modal');
     $('share-global-flag').checked = isGlobal;
     $('share-search-input').value = '';
 
     await fetchAllUsers();
-    renderShareUsers(sharedWithIds || []);
+    renderShareUsers();
 
     // UI logic for toggling global vs specific
     const toggleGlobal = () => {
@@ -1521,39 +1523,49 @@ const ChatApp = (() => {
       document.querySelectorAll('#share-users-list .user-checkbox').forEach(cb => cb.disabled = isG);
     };
     $('share-global-flag').onchange = toggleGlobal;
-    $('share-search-input').oninput = () => renderShareUsers(getCheckedUsers());
+    $('share-search-input').oninput = () => renderShareUsers();
 
     toggleGlobal();
     modal.classList.add('open');
   }
 
-  function getCheckedUsers() {
-    const checked = [];
-    document.querySelectorAll('#share-users-list .user-checkbox:checked').forEach(cb => {
-      checked.push(parseInt(cb.value));
-    });
-    return checked;
+  function handleShareUserToggle(checkbox) {
+    const id = parseInt(checkbox.value);
+    if (checkbox.checked) {
+      checkedShareUserIds.add(id);
+    } else {
+      checkedShareUserIds.delete(id);
+    }
   }
 
-  function renderShareUsers(selectedIds) {
+  function getCheckedUsers() {
+    return Array.from(checkedShareUserIds);
+  }
+
+  function renderShareUsers() {
     const query = $('share-search-input').value.toLowerCase();
     const list = $('share-users-list');
     const isG = $('share-global-flag').checked;
 
     let html = '';
-    const filtered = allUsers.filter(u => u.name.toLowerCase().includes(query) || (u.job_title && u.job_title.toLowerCase().includes(query)));
+    
+    // Always show checked users first, then filtered unchecked users
+    const checkedUsers = allUsers.filter(u => checkedShareUserIds.has(u.id));
+    const uncheckedFiltered = allUsers.filter(u => !checkedShareUserIds.has(u.id) && (u.name.toLowerCase().includes(query) || (u.job_title && u.job_title.toLowerCase().includes(query))));
+    
+    const displayUsers = [...checkedUsers, ...uncheckedFiltered];
 
-    if (filtered.length === 0) {
+    if (displayUsers.length === 0) {
       list.innerHTML = '<div style="font-size: 12px; color: var(--text-muted);">No users found.</div>';
       return;
     }
 
-    filtered.forEach(u => {
-      const checked = selectedIds.includes(u.id) ? 'checked' : '';
+    displayUsers.forEach(u => {
+      const checked = checkedShareUserIds.has(u.id) ? 'checked' : '';
       const disabled = isG ? 'disabled' : '';
       html += `
         <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-primary); cursor: pointer; padding: 4px;">
-          <input type="checkbox" class="user-checkbox" value="${u.id}" ${checked} ${disabled}>
+          <input type="checkbox" class="user-checkbox" value="${u.id}" ${checked} ${disabled} onchange="ChatApp.handleShareUserToggle(this)">
           <div>
             <div>${escapeHtml(u.name)}</div>
             <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(u.job_title || '')}</div>
@@ -1656,6 +1668,7 @@ const ChatApp = (() => {
     deleteDocument,
     updateDocumentGlobalStatus,
     openShareModal,
+    handleShareUserToggle,
     toggleDocumentChat,
     sendMessage,
     stopStreaming,
