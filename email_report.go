@@ -149,7 +149,7 @@ func mailOut(htmlBody string) error {
 	}
 
 	if err := smtp.SendMail(addr, auth, from, allRecipients, msg); err != nil {
-		log.Printf("email failed to send: %v", err)
+		fmt.Printf("email failed to send: %v", err)
 		return err
 	}
 
@@ -173,25 +173,30 @@ func SendMonthlyReport(data []UsageRow) error {
 
 // usageLogReport runs the DB query and returns rows for the given day range.
 func usageLogReport(days int) ([]UsageRow, error) {
+	if days <= 0 {
+		days = 7
+	}
+
 	query := fmt.Sprintf(`
-SELECT
-    u.name,
-    u.job_title,
-    COALESCE(ul.chat_count, 0) AS chat_count,
-    COALESCE(ul.image_count, 0) AS image_count,
-    formatDateTime(u.created_at, '%%d-%%m-%%Y %%I:%%M %%p') AS last_used
-FROM users  AS u
-LEFT JOIN (
-    SELECT 
-        user_id,
-        countIf(ai_usage_type = 'chat') AS chat_count,
-        countIf(ai_usage_type = 'image') AS image_count
-    FROM usage_log
-    WHERE created_at >= now() - INTERVAL %d DAY
-    GROUP BY user_id
-) AS ul ON u.id = ul.user_id
-ORDER BY u.created_at DESC;
-`, days)
+	SELECT
+		u.name,
+		u.job_title,
+		ul.chat_count,
+		ul.image_count,
+		formatDateTime(ul.last_used_at, '%%d-%%m-%%Y %%I:%%M %%p') AS last_used
+	FROM users AS u
+	INNER JOIN (
+		SELECT
+			user_id,
+			countIf(ai_usage_type = 'chat') AS chat_count,
+			countIf(ai_usage_type = 'image') AS image_count,
+			max(created_at) AS last_used_at
+		FROM usage_log
+		WHERE created_at >= now() - toIntervalDay(%d)
+		GROUP BY user_id
+	) AS ul ON u.id = ul.user_id
+	ORDER BY ul.last_used_at DESC NULLS LAST;
+	`, days)
 
 	rows, err := ClickhouseQuery(query)
 	if err != nil {

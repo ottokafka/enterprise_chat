@@ -36,7 +36,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/disintegration/imaging"
@@ -495,87 +494,6 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// ==========================================
-	// 🔍 WEB SEARCH PIPELINE INTERCEPTION
-	// ==========================================
-	var finalWebResults []SearchResult
-
-	if webSearch && len(messages) > 0 {
-		var flusher http.Flusher
-		var canFlush bool
-		if stream {
-			writeHeadersOnce()
-			flusher, canFlush = w.(http.Flusher)
-		}
-
-		var progressMu sync.Mutex
-		progressCb := func(msg string) {
-			log.Println(msg)
-			if stream {
-				progressMu.Lock()
-				defer progressMu.Unlock()
-
-				// Send as reasoning partial
-				chunk := map[string]interface{}{
-					"choices": []map[string]interface{}{
-						{
-							"delta": map[string]interface{}{
-								"reasoning_content": msg + "\n",
-							},
-						},
-					},
-				}
-				rawChunk, _ := json.Marshal(chunk)
-				fmt.Fprintf(w, "data: %s\n\n", rawChunk)
-				if canFlush {
-					flusher.Flush()
-				}
-			}
-		}
-
-		if stream {
-			progressCb("[search] web search generating optimal search queries...")
-		}
-
-		queries, err := generateSearchQueries(
-			context.Background(),
-			messages,
-			searchLLMModel(),
-			searchLLMAPIKey(),
-			searchLLMBaseURL(),
-		)
-
-		if err == nil && len(queries) > 0 {
-			var webResults []SearchResult
-			var contextText string
-			contextText, webResults = executeParallelSearches(queries, true, progressCb)
-			finalWebResults = webResults
-
-			injection := fmt.Sprintf("\n\n--- REAL-TIME WEB SEARCH CONTEXT ---\n%s\n\nPlease answer my question using the context above. Cite sources as [N].", contextText)
-
-			lastIdx := len(messages) - 1
-			lastMsg := messages[lastIdx]
-
-			if contentStr, ok := lastMsg["content"].(string); ok {
-				lastMsg["content"] = contentStr + injection
-			} else if contentParts, ok := lastMsg["content"].([]map[string]any); ok {
-				contentParts = append(contentParts, map[string]any{
-					"type": "text",
-					"text": injection,
-				})
-				lastMsg["content"] = contentParts
-			} else if contentParts, ok := lastMsg["content"].([]any); ok {
-				contentParts = append(contentParts, map[string]any{
-					"type": "text",
-					"text": injection,
-				})
-				lastMsg["content"] = contentParts
-			}
-			messages[lastIdx] = lastMsg
-		}
-	}
-	// ==========================================
-
 	// Re-encode messages as JSON to build openai params
 	messagesJSON, _ := json.Marshal(messages)
 
@@ -603,67 +521,291 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// ── Non-streaming ─────────────────────────────────────────────────────────
+	// Dynamically inject the web_search tool if enabled by UI
+	if webSearch {
+		webSearchToolStr := `[{
+			"type": "function",
+			"function": {
+				"name": "web_search",
+				"description": "Search the internet for real-time information or specific facts the model doesn't know.",
+				"parameters": {
+					"type": "object",
+					"properties": {
+						"queries": {
+							"type": "array",
+							"items": {"type": "string"},
+							"description": "A list of search queries to find relevant information."
+						}
+					},
+					"required": ["queries"]
+				}
+			}
+		}]`
+		var wsTool []openai.ChatCompletionToolParam
+		json.Unmarshal([]byte(webSearchToolStr), &wsTool)
+		if len(wsTool) > 0 {
+			params.Tools = append(params.Tools, wsTool[0])
+		}
+	}
+
+	// Helper to send progress via streaming
+	var flusher http.Flusher
+	var canFlush bool
+	if stream {
+		writeHeadersOnce()
+		flusher, canFlush = w.(http.Flusher)
+	}
+
+	progressCb := func(msg string) {
+		log.Println(msg)
+		if stream {
+			chunk := map[string]interface{}{
+				"choices": []map[string]interface{}{
+					{
+						"delta": map[string]interface{}{
+							"reasoning_content": msg + "\n",
+						},
+					},
+				},
+			}
+			rawChunk, _ := json.Marshal(chunk)
+			fmt.Fprintf(w, "data: %s\n\n", rawChunk)
+			if canFlush {
+				flusher.Flush()
+			}
+		}
+	}
+
+	// ── Non-streaming Execution ───────────────────────────────────────────────
 	if !stream {
-		resp, err := llmClient.Chat.Completions.New(context.Background(), params)
-		if err != nil {
-			log.Printf("[chat] Error: %v\n", err)
-			http.Error(w, `{"error":"Chat completion failed"}`, http.StatusInternalServerError)
+		var finalWebResults []SearchResult
+
+		// Loop up to 5 times for multi-turn tool logic
+		for i := 0; i < 5; i++ {
+			resp, err := llmClient.Chat.Completions.New(context.Background(), params)
+			if err != nil {
+				log.Printf("[chat] Error: %v\n", err)
+				http.Error(w, `{"error":"Chat completion failed"}`, http.StatusInternalServerError)
+				return
+			}
+
+			if len(resp.Choices) == 0 {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+				return
+			}
+
+			msg := resp.Choices[0].Message
+
+			// If finish reason is tool_calls, we must handle them
+			if resp.Choices[0].FinishReason == "tool_calls" && len(msg.ToolCalls) > 0 {
+				// Append assistant's tool call message 
+				msgBytes, _ := json.Marshal(msg)
+				var unionMsg openai.ChatCompletionMessageParamUnion
+				json.Unmarshal(msgBytes, &unionMsg)
+				params.Messages = append(params.Messages, unionMsg)
+
+				handledAny := false
+				for _, tc := range msg.ToolCalls {
+					if tc.Function.Name == "web_search" {
+						var args struct {
+							Queries []string `json:"queries"`
+						}
+						json.Unmarshal([]byte(tc.Function.Arguments), &args)
+
+						contextText, webResults := executeParallelSearches(args.Queries, true, progressCb)
+						finalWebResults = append(finalWebResults, webResults...)
+
+						toolMsgBytes, _ := json.Marshal(map[string]interface{}{
+							"role": "tool",
+							"tool_call_id": tc.ID,
+							"content": contextText,
+						})
+						var toolUnion openai.ChatCompletionMessageParamUnion
+						json.Unmarshal(toolMsgBytes, &toolUnion)
+						params.Messages = append(params.Messages, toolUnion)
+						
+						handledAny = true
+					}
+				}
+
+				// If the model called tools we didn't handle, break out to return to client
+				if !handledAny {
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(resp)
+					return
+				}
+				// Otherwise, proceed to next iteration with appended tool result
+				continue
+			}
+
+			// Final answer reached
+			if len(finalWebResults) > 0 {
+				var sb strings.Builder
+				sb.WriteString("\n\n---\n**Sources:**\n")
+				for idx, r := range finalWebResults {
+					sb.WriteString(fmt.Sprintf("[%d] [%s](%s)\n", idx+1, r.Title, r.URL))
+				}
+				resp.Choices[0].Message.Content += sb.String()
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
 			return
 		}
 
-		if len(finalWebResults) > 0 && len(resp.Choices) > 0 {
-			var sb strings.Builder
-			sb.WriteString("\n\n---\n**Sources:**\n")
-			for i, r := range finalWebResults {
-				sb.WriteString(fmt.Sprintf("[%d] [%s](%s)\n", i+1, r.Title, r.URL))
-			}
-			resp.Choices[0].Message.Content += sb.String()
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		http.Error(w, `{"error":"Max tool call depth exceeded"}`, http.StatusInternalServerError)
 		return
 	}
 
-	// ── Streaming ─────────────────────────────────────────────────────────────
-	writeHeadersOnce()
+	// ── Streaming Execution ───────────────────────────────────────────────────
+	var finalWebResults []SearchResult
 
-	flusher, canFlush := w.(http.Flusher)
-	streamResp := llmClient.Chat.Completions.NewStreaming(context.Background(), params)
-	for streamResp.Next() {
-		chunk := streamResp.Current()
-		raw, _ := json.Marshal(chunk)
-		fmt.Fprintf(w, "data: %s\n\n", raw)
-		if canFlush {
-			flusher.Flush()
+	for i := 0; i < 5; i++ {
+		streamResp := llmClient.Chat.Completions.NewStreaming(context.Background(), params)
+		
+		var tcID string
+		var tcName string
+		var tcAccumulator string
+		var finishReason string
+
+		for streamResp.Next() {
+			chunk := streamResp.Current()
+
+			if len(chunk.Choices) > 0 {
+				delta := chunk.Choices[0].Delta
+				
+				// Keep track of finish reason
+				if chunk.Choices[0].FinishReason != "" {
+					finishReason = string(chunk.Choices[0].FinishReason)
+				}
+
+				if len(delta.ToolCalls) > 0 {
+					tcDelta := delta.ToolCalls[0]
+					if tcDelta.ID != "" {
+						tcID = tcDelta.ID
+					}
+					if tcDelta.Function.Name != "" {
+						tcName = tcDelta.Function.Name
+					}
+					if tcDelta.Function.Arguments != "" {
+						tcAccumulator += tcDelta.Function.Arguments
+					}
+				} else {
+					// Stream normal responses to client if we haven't started a tool call
+					if tcName == "" {
+						raw, _ := json.Marshal(chunk)
+						fmt.Fprintf(w, "data: %s\n\n", raw)
+						if canFlush {
+							flusher.Flush()
+						}
+					}
+				}
+			}
 		}
-	}
-	if err := streamResp.Err(); err != nil {
-		log.Printf("[chat] Stream error: %v\n", err)
-	}
 
-	if len(finalWebResults) > 0 {
-		var sb strings.Builder
-		sb.WriteString("\n\n---\n**Sources:**\n")
-		for i, r := range finalWebResults {
-			sb.WriteString(fmt.Sprintf("[%d] [%s](%s)\n", i+1, r.Title, r.URL))
+		if err := streamResp.Err(); err != nil {
+			log.Printf("[chat] Stream error: %v\n", err)
+			break
 		}
 
-		chunk := map[string]interface{}{
-			"choices": []map[string]interface{}{
-				{
-					"delta": map[string]interface{}{
-						"content": sb.String(),
+		if finishReason == "tool_calls" && tcName != "" {
+			// Save assistant tool call request
+			astMsgBytes, _ := json.Marshal(map[string]interface{}{
+				"role": "assistant",
+				"tool_calls": []map[string]interface{}{{
+					"id": tcID,
+					"type": "function",
+					"function": map[string]interface{}{
+						"name": tcName,
+						"arguments": tcAccumulator,
+					},
+				}},
+			})
+			var astMsg openai.ChatCompletionMessageParamUnion
+			json.Unmarshal(astMsgBytes, &astMsg)
+			params.Messages = append(params.Messages, astMsg)
+
+			if tcName == "web_search" {
+				progressCb("[search] executing optimal search queries...")
+
+				var args struct {
+					Queries []string `json:"queries"`
+				}
+				json.Unmarshal([]byte(tcAccumulator), &args)
+
+				contextText, webResults := executeParallelSearches(args.Queries, true, progressCb)
+				finalWebResults = append(finalWebResults, webResults...)
+
+				toolMsgBytes, _ := json.Marshal(map[string]interface{}{
+					"role": "tool",
+					"tool_call_id": tcID,
+					"content": contextText,
+				})
+				var toolUnion openai.ChatCompletionMessageParamUnion
+				json.Unmarshal(toolMsgBytes, &toolUnion)
+				params.Messages = append(params.Messages, toolUnion)
+				
+				// Loop again to generate answer from tool output
+				continue
+			} else {
+				// Tool not handled locally
+				// Need to stream this tool call chunk to client
+				chunk := map[string]interface{}{
+					"choices": []map[string]interface{}{
+						{
+							"delta": map[string]interface{}{
+								"content": nil,
+								"tool_calls": []map[string]interface{}{
+									{
+										"id": tcID,
+										"type": "function",
+										"function": map[string]interface{}{
+											"name": tcName,
+											"arguments": tcAccumulator,
+										},
+									},
+								},
+							},
+							"finish_reason": "tool_calls",
+						},
+					},
+				}
+				raw, _ := json.Marshal(chunk)
+				fmt.Fprintf(w, "data: %s\n\n", raw)
+				if canFlush {
+					flusher.Flush()
+				}
+				break
+			}
+		}
+
+		// Finish reasoning: non-tool_call end
+		if len(finalWebResults) > 0 {
+			var sb strings.Builder
+			sb.WriteString("\n\n---\n**Sources:**\n")
+			for idx, r := range finalWebResults {
+				sb.WriteString(fmt.Sprintf("[%d] [%s](%s)\n", idx+1, r.Title, r.URL))
+			}
+
+			chunk := map[string]interface{}{
+				"choices": []map[string]interface{}{
+					{
+						"delta": map[string]interface{}{
+							"content": sb.String(),
+						},
 					},
 				},
-			},
+			}
+			raw, _ := json.Marshal(chunk)
+
+			fmt.Fprintf(w, "data: %s\n\n", raw)
+			if canFlush {
+				flusher.Flush()
+			}
 		}
-		raw, _ := json.Marshal(chunk)
-		fmt.Fprintf(w, "data: %s\n\n", raw)
-		if canFlush {
-			flusher.Flush()
-		}
+		
+		break
 	}
 }
 

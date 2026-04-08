@@ -368,6 +368,118 @@
     "finish_reason": "stop"
   }]
 }</code></pre>
+
+      <!-- Tool Calling -->
+      <h2>Tool Calling</h2>
+      <p class="section-desc">Define functions that the model can choose to call, enabling it to interact with external tools and APIs.</p>
+      <pre><code class="language-bash example-code">curl http://localhost:4445/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
+  -d '{
+    "model": "qwen3.5",
+    "messages": [
+      { "role": "user", "content": "What is the weather in Tokyo?" }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get the current weather in a given location",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "location": { "type": "string", "description": "The city and state, e.g. San Francisco, CA" },
+              "unit": { "type": "string", "enum": ["celsius", "fahrenheit"] }
+            },
+            "required": ["location"]
+          }
+        }
+      }
+    ],
+    "tool_choice": "auto"
+  }'</code></pre>
+      <div class="response-label">Response</div>
+      <pre><code class="language-json">{
+  "id": "chatcmpl-tool-123",
+  "choices": [{
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [{
+        "id": "call_abc123",
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "arguments": "{\"location\": \"Tokyo\", \"unit\": \"celsius\"}"
+        }
+      }]
+    },
+    "finish_reason": "tool_calls"
+  }]
+}</code></pre>
+
+      <!-- Web Search -->
+      <h2>Web Search</h2>
+      <p class="section-desc">Enable the model to search the internet for real-time information. You can use a simplified toggle or the native tool calling schema.</p>
+      
+      <div class="response-label">Option 1: Simplified Toggle</div>
+      <p class="section-desc">Add <code>"web_search": true</code> to your request. The server will automatically choose the best search queries and ground the answer with sources.</p>
+      <pre><code class="language-bash example-code">curl http://localhost:4445/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
+  -d '{
+    "model": "qwen3.5",
+    "messages": [
+      { "role": "user", "content": "What is the current stock price of NVIDIA?" }
+    ],
+    "web_search": true
+  }'</code></pre>
+
+      <div class="response-label">Option 2: Native Tool Calling</div>
+      <p class="section-desc">Manually define the <code>web_search</code> tool to give the model fine-grained control over when to use it.</p>
+      <pre><code class="language-bash example-code">curl http://localhost:4445/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
+  -d '{
+    "model": "qwen3.5",
+    "messages": [
+      { "role": "user", "content": "Check the news for today." }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "web_search",
+          "description": "Search the internet for real-time information",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "queries": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            },
+            "required": ["queries"]
+          }
+        }
+      }
+    ]
+  }'</code></pre>
+
+      <div class="response-label">Response</div>
+      <pre><code class="language-json">{
+  "id": "chatcmpl-search-123",
+  "choices": [{
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": "As of today, NVIDIA (NVDA) is trading at... [1]\n\nSources:\n[1] [NVIDIA Stock Quote](https://quote.com/...)"
+    },
+    "finish_reason": "stop"
+  }]
+}</code></pre>
       
       <!-- Anthropic Compatibility -->
       <h2>Anthropic Claude Compatibility</h2>
