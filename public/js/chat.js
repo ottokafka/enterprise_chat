@@ -515,6 +515,7 @@ const ChatApp = (() => {
         // strip file attachment suffix from content
         input.value = userMsg.content.replace(/\n\n\[Attached:.*\]$/, '');
         input.focus();
+        adjustChatInputHeight();
       }
       IndexedDBService.deleteChat(userMsg.id);
       messages.pop();
@@ -969,7 +970,10 @@ const ChatApp = (() => {
 
     sendBtn?.addEventListener('click', () => {
       const text = input?.value ?? '';
-      input && (input.value = '');
+      if (input) {
+        input.value = '';
+        adjustChatInputHeight();
+      }
       sendMessage(text);
     });
 
@@ -989,6 +993,7 @@ const ChatApp = (() => {
         if (!isStreaming) {
           const text = input.value;
           input.value = '';
+          adjustChatInputHeight();
           sendMessage(text);
         }
       }
@@ -996,8 +1001,7 @@ const ChatApp = (() => {
 
     // Auto-resize textarea
     input?.addEventListener('input', () => {
-      input.style.height = 'auto';
-      input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+      adjustChatInputHeight();
     });
 
     fileBtn?.addEventListener('click', () => fileInput?.click());
@@ -1044,6 +1048,23 @@ const ChatApp = (() => {
     $('left-sidebar-close')?.addEventListener('click', () => {
       document.querySelector('.sidebar')?.classList.remove('open');
     });
+  }
+
+  function adjustChatInputHeight() {
+    const input = $('chat-input');
+    if (!input) return;
+
+    // Reset height to measure accurate scrollHeight without losing focus or page scroll
+    input.style.height = '24px';
+    
+    // Set new height based on scrollHeight, with a reasonable max limit
+    const newHeight = Math.min(input.scrollHeight, 400); 
+    input.style.height = newHeight + 'px';
+    
+    // Ensure the cursor remains visible if the text exceeds the max height
+    if (input.scrollHeight > newHeight) {
+      input.scrollTop = input.scrollHeight;
+    }
   }
 
   function setupSidebarClickOutside() {
