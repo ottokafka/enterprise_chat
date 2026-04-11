@@ -15,6 +15,7 @@ const ChatApp = (() => {
   let systemPrompts = [];
   let selectedSystemPromptId = 'none';
   let webSearchEnabled = false; // true when Web Search toggle is active
+  let mcpEnabled = false;       // true when MCP endpoint (/v1/mcp) is active
 
   // ── DOM Helpers ───────────────────────────────────────────────────────────
   const $ = id => document.getElementById(id);
@@ -336,7 +337,7 @@ const ChatApp = (() => {
 
       const endpoint = activeDocumentNames.size > 0
           ? '/v1/rag'
-          : '/v1/chat/completions';
+          : mcpEnabled ? '/v1/mcp' : '/v1/chat/completions';
       const response = await fetch(endpoint, requestConfig);
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -646,7 +647,7 @@ const ChatApp = (() => {
 
       const endpoint = activeDocumentNames.size > 0
           ? '/v1/rag'
-          : '/v1/chat/completions';
+          : mcpEnabled ? '/v1/mcp' : '/v1/chat/completions';
       const response = await fetch(endpoint, requestConfig);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const reader = response.body.getReader();
@@ -1663,6 +1664,117 @@ const ChatApp = (() => {
     modal.classList.add('open');
   }
 
+  // ── MCP Integration ──────────────────────────────────────────────────────
+  /**
+   * Toggle MCP endpoint mode on/off.
+   * When enabled, chat completions are routed to /v1/mcp instead of
+   * /v1/chat/completions. The MCP server speaks JSON-RPC 2.0 over HTTP.
+   */
+  function toggleMCP(enabled) {
+    mcpEnabled = enabled !== undefined ? enabled : !mcpEnabled;
+    console.log('[MCP] endpoint mode:', mcpEnabled ? '/v1/mcp' : '/v1/chat/completions');
+    return mcpEnabled;
+  }
+
+  /**
+   * Low-level MCP tool call helper.
+   * Sends a JSON-RPC 2.0 `tools/call` request to /v1/mcp and returns the
+   * parsed result content array.
+   *
+   * @param {string} toolName  - Name of the registered MCP tool
+   * @param {object} args      - Tool input arguments (matched against tool schema)
+   * @returns {Promise<Array>} - Array of MCP content items (TextContent etc.)
+   */
+  async function callMCPTool(toolName, args) {
+    // MCP Streamable HTTP transport: initialize with a POST that establishes a session
+    const initRes = await fetch('/v1/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          clientInfo: { name: 'enterprise-chat-ui', version: '1.0.0' },
+        },
+      }),
+    });
+
+    if (!initRes.ok) throw new Error(`MCP init failed: ${initRes.status}`);
+    const sessionId = initRes.headers.get('mcp-session-id');
+    if (!sessionId) throw new Error('No MCP session ID returned');
+
+    // Send initialized notification
+    await fetch('/v1/mcp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'mcp-session-id': sessionId,
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} }),
+    });
+
+    // Call the tool
+    const callRes = await fetch('/v1/mcp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
+        'mcp-session-id': sessionId,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: { name: toolName, arguments: args },
+      }),
+    });
+
+    if (!callRes.ok) throw new Error(`MCP tools/call failed: ${callRes.status}`);
+    const data = await callRes.json();
+    if (data.error) throw new Error(`MCP tool error: ${JSON.stringify(data.error)}`);
+    return data.result?.content ?? [];
+  }
+
+  /**
+   * Smoke-test the calculator MCP tool.
+   * Injects the result as an assistant message in the current chat log.
+   *
+   * @param {string} operation - 'add' | 'subtract' | 'multiply' | 'divide'
+   * @param {number} a         - First operand
+   * @param {number} b         - Second operand
+   */
+  async function testMCPCalculator(operation = 'add', a = 6, b = 7) {
+    const log = $('chat-log');
+    if (log) {
+      log.insertAdjacentHTML('beforeend', `
+        <div class="msg-wrapper msg-assistant" id="mcp-test-result">
+          <div class="msg-bubble assistant-bubble">
+            <div class="msg-content">⏳ Calling MCP calculator tool…</div>
+          </div>
+        </div>`);
+      scrollToBottom(true);
+    }
+    try {
+      const content = await callMCPTool('calculator', { operation, a, b });
+      const text = content.map(c => c.text || JSON.stringify(c)).join('\n');
+      const el = $('mcp-test-result');
+      if (el) el.innerHTML = `
+        <div class="msg-bubble assistant-bubble">
+          <div class="msg-content markdown-body">
+            <strong>🔧 MCP Calculator Result</strong><br/>
+            <code>${escapeHtml(text)}</code>
+          </div>
+        </div>`;
+    } catch (err) {
+      const el = $('mcp-test-result');
+      if (el) el.innerHTML = `<div class="msg-bubble assistant-bubble"><div class="msg-content">❌ MCP error: ${escapeHtml(err.message)}</div></div>`;
+      console.error('[MCP] testMCPCalculator error:', err);
+    }
+  }
+
   return {
     init,
     deleteDocument,
@@ -1689,6 +1801,10 @@ const ChatApp = (() => {
     deletePromptUI,
     viewDocumentSnapshot,
     openImageModal,
+    // MCP
+    toggleMCP,
+    callMCPTool,
+    testMCPCalculator,
   };
 })();
 

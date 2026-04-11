@@ -521,31 +521,92 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Dynamically inject the web_search tool if enabled by UI
+	// Always inject web_search — the LLM decides autonomously when to use it.
+	// The toggle changes the description hint: ON = actively prefer searching,
+	// OFF = search only when the answer requires real-time / unknown information.
+	wsDescription := "Search the internet when the user asks for current events, latest news, real-time data, or information the model may not know. Use your judgment — only call this tool when fresh web data is needed."
 	if webSearch {
-		webSearchToolStr := `[{
-			"type": "function",
-			"function": {
-				"name": "web_search",
-				"description": "Search the internet for real-time information or specific facts the model doesn't know.",
-				"parameters": {
-					"type": "object",
-					"properties": {
-						"queries": {
-							"type": "array",
-							"items": {"type": "string"},
-							"description": "A list of search queries to find relevant information."
-						}
-					},
-					"required": ["queries"]
-				}
+		wsDescription = "The user has enabled web search. Actively search the internet to answer this query with the most up-to-date information. Prefer real web results over your training data."
+	}
+	webSearchToolStr := fmt.Sprintf(`[{
+		"type": "function",
+		"function": {
+			"name": "web_search",
+			"description": %q,
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"queries": {
+						"type": "array",
+						"items": {"type": "string"},
+						"description": "A list of specific search queries to find relevant information."
+					}
+				},
+				"required": ["queries"]
 			}
-		}]`
-		var wsTool []openai.ChatCompletionToolParam
-		json.Unmarshal([]byte(webSearchToolStr), &wsTool)
-		if len(wsTool) > 0 {
-			params.Tools = append(params.Tools, wsTool[0])
 		}
+	}]`, wsDescription)
+	var wsTool []openai.ChatCompletionToolParam
+	if err := json.Unmarshal([]byte(webSearchToolStr), &wsTool); err == nil && len(wsTool) > 0 {
+		params.Tools = append(params.Tools, wsTool[0])
+	}
+
+	// Always inject the calculator tool so the LLM can use it from natural language.
+	calcToolStr := `[{
+		"type": "function",
+		"function": {
+			"name": "calculator",
+			"description": "Perform precise arithmetic: add, subtract, multiply, or divide two numbers. Use this whenever the user asks to calculate, compute, or evaluate a math expression.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"operation": {
+						"type": "string",
+						"enum": ["add", "subtract", "multiply", "divide"],
+						"description": "The arithmetic operation to perform."
+					},
+					"a": { "type": "number", "description": "The first operand." },
+					"b": { "type": "number", "description": "The second operand." }
+				},
+				"required": ["operation", "a", "b"]
+			}
+		}
+	}]`
+	var calcTool []openai.ChatCompletionToolParam
+	if err := json.Unmarshal([]byte(calcToolStr), &calcTool); err == nil && len(calcTool) > 0 {
+		params.Tools = append(params.Tools, calcTool[0])
+	}
+
+	// Always inject the search_my_documents tool so the LLM can search user files.
+	smdToolStr := `[{
+		"type": "function",
+		"function": {
+			"name": "search_my_documents",
+			"description": "Search the user's uploaded documents using semantic + keyword hybrid search. Use this when the user asks about something that might be in their uploaded files, reports, or shared documents.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"query": {
+						"type": "string",
+						"description": "The exact question to search for in the documents."
+					},
+					"document_names": {
+						"type": "array",
+						"items": {"type": "string"},
+						"description": "Optional list of document names to restrict the search to. Omit to search all accessible documents."
+					},
+					"top_n": {
+						"type": "integer",
+						"description": "Maximum number of chunks to return (default 5)"
+					}
+				},
+				"required": ["query"]
+			}
+		}
+	}]`
+	var smdTool []openai.ChatCompletionToolParam
+	if err := json.Unmarshal([]byte(smdToolStr), &smdTool); err == nil && len(smdTool) > 0 {
+		params.Tools = append(params.Tools, smdTool[0])
 	}
 
 	// Helper to send progress via streaming
@@ -607,26 +668,48 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 
 				handledAny := false
 				for _, tc := range msg.ToolCalls {
-					if tc.Function.Name == "web_search" {
+					var toolResult string
+					switch tc.Function.Name {
+					case "web_search":
 						var args struct {
 							Queries []string `json:"queries"`
 						}
 						json.Unmarshal([]byte(tc.Function.Arguments), &args)
-
 						contextText, webResults := executeParallelSearches(args.Queries, true, progressCb)
 						finalWebResults = append(finalWebResults, webResults...)
+						toolResult = contextText
 
-						toolMsgBytes, _ := json.Marshal(map[string]interface{}{
-							"role": "tool",
-							"tool_call_id": tc.ID,
-							"content": contextText,
-						})
-						var toolUnion openai.ChatCompletionMessageParamUnion
-						json.Unmarshal(toolMsgBytes, &toolUnion)
-						params.Messages = append(params.Messages, toolUnion)
+					case "calculator":
+						var args struct {
+							Operation string  `json:"operation"`
+							A         float64 `json:"a"`
+							B         float64 `json:"b"`
+						}
+						json.Unmarshal([]byte(tc.Function.Arguments), &args)
+						resultStr, _ := Calculate(args.Operation, args.A, args.B)
+						toolResult = resultStr
+						log.Printf("[calculator] %s\n", resultStr)
+
+					case "search_my_documents":
+						var args SearchMyDocsInput
+						json.Unmarshal([]byte(tc.Function.Arguments), &args)
+						progressCb(fmt.Sprintf("[search_my_documents] Searching user documents for: %s", args.Query))
 						
-						handledAny = true
+						_, textContent, _ := searchMyDocumentsMCPTool(r.Context(), nil, args)
+						toolResult = textContent.Text
+
+					default:
+						continue // skip unhandled tools
 					}
+					toolMsgBytes, _ := json.Marshal(map[string]interface{}{
+						"role":         "tool",
+						"tool_call_id": tc.ID,
+						"content":      toolResult,
+					})
+					var toolUnion openai.ChatCompletionMessageParamUnion
+					json.Unmarshal(toolMsgBytes, &toolUnion)
+					params.Messages = append(params.Messages, toolUnion)
+					handledAny = true
 				}
 
 				// If the model called tools we didn't handle, break out to return to client
@@ -726,29 +809,64 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 			json.Unmarshal(astMsgBytes, &astMsg)
 			params.Messages = append(params.Messages, astMsg)
 
-			if tcName == "web_search" {
+			switch tcName {
+			case "web_search":
 				progressCb("[search] executing optimal search queries...")
-
 				var args struct {
 					Queries []string `json:"queries"`
 				}
 				json.Unmarshal([]byte(tcAccumulator), &args)
-
 				contextText, webResults := executeParallelSearches(args.Queries, true, progressCb)
 				finalWebResults = append(finalWebResults, webResults...)
-
 				toolMsgBytes, _ := json.Marshal(map[string]interface{}{
-					"role": "tool",
+					"role":         "tool",
 					"tool_call_id": tcID,
-					"content": contextText,
+					"content":      contextText,
 				})
 				var toolUnion openai.ChatCompletionMessageParamUnion
 				json.Unmarshal(toolMsgBytes, &toolUnion)
 				params.Messages = append(params.Messages, toolUnion)
-				
 				// Loop again to generate answer from tool output
 				continue
-			} else {
+
+			case "calculator":
+				var args struct {
+					Operation string  `json:"operation"`
+					A         float64 `json:"a"`
+					B         float64 `json:"b"`
+				}
+				json.Unmarshal([]byte(tcAccumulator), &args)
+				resultStr, _ := Calculate(args.Operation, args.A, args.B)
+				progressCb(fmt.Sprintf("[calculator] Result: %s", resultStr))
+				toolMsgBytes, _ := json.Marshal(map[string]interface{}{
+					"role":         "tool",
+					"tool_call_id": tcID,
+					"content":      resultStr,
+				})
+				var toolUnion openai.ChatCompletionMessageParamUnion
+				json.Unmarshal(toolMsgBytes, &toolUnion)
+				params.Messages = append(params.Messages, toolUnion)
+				// Loop again to give context to model
+				continue
+
+			case "search_my_documents":
+				var args SearchMyDocsInput
+				json.Unmarshal([]byte(tcAccumulator), &args)
+				progressCb(fmt.Sprintf("[search_my_documents] Searching user documents for: %s", args.Query))
+				
+				_, textContent, _ := searchMyDocumentsMCPTool(r.Context(), nil, args)
+				toolMsgBytes, _ := json.Marshal(map[string]interface{}{
+					"role":         "tool",
+					"tool_call_id": tcID,
+					"content":      textContent.Text,
+				})
+				var toolUnion openai.ChatCompletionMessageParamUnion
+				json.Unmarshal(toolMsgBytes, &toolUnion)
+				params.Messages = append(params.Messages, toolUnion)
+				// Loop again to give context to model
+				continue
+			
+			default:
 				// Tool not handled locally
 				// Need to stream this tool call chunk to client
 				chunk := map[string]interface{}{

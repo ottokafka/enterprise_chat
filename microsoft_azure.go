@@ -311,6 +311,9 @@ func ApiAuthMiddleware(next http.Handler) http.Handler {
 			}(userId, usageType)
 		}
 
-		next.ServeHTTP(w, r)
+		// Inject the resolved userId into context so MCP tool handlers
+		// (which receive context.Context, not *http.Request) can retrieve it.
+		ctx := context.WithValue(r.Context(), userIdKey{}, userId)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

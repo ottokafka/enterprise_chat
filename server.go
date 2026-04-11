@@ -36,6 +36,9 @@ func main() {
 		host = "localhost" // default fallback
 	}
 
+	// Initialize MCP server and HTTP handler (must be before InitRoutes)
+	InitMCPServer()
+
 	// Retrieve mux with route mappings
 	mux := InitRoutes()
 

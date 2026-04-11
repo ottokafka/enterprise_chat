@@ -1,10 +1,24 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
 )
+
+// userIdKey is the context key for the authenticated user's ID.
+// Using a private type prevents key collisions with other packages.
+type userIdKey struct{}
+
+// userIdFromContext retrieves the authenticated user ID stored by ApiAuthMiddleware.
+// Returns 0 if not set (unauthenticated or anonymous path).
+func userIdFromContext(ctx context.Context) int {
+	if uid, ok := ctx.Value(userIdKey{}).(int); ok {
+		return uid
+	}
+	return 0
+}
 
 // CheckAuthMiddleware secures the /chat component and api user fetch
 func CheckAuthMiddleware(next http.Handler) http.Handler {
@@ -14,7 +28,7 @@ func CheckAuthMiddleware(next http.Handler) http.Handler {
 		uid, _ := session.Values["user_id"].(int)
 
 		if auth && uid > 0 {
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userIdKey{}, uid)))
 			return
 		}
 		http.Redirect(w, r, "/login", http.StatusFound)
@@ -55,6 +69,10 @@ func InitRoutes() *http.ServeMux {
 	mux.Handle("DELETE /v1/documents/{id}", ApiAuthMiddleware(http.HandlerFunc(deleteDocument)))
 	mux.Handle("PATCH /v1/documents/{id}", ApiAuthMiddleware(http.HandlerFunc(updateDocumentGlobalStatus)))
 	mux.Handle("POST /v1/documents/{id}/share", ApiAuthMiddleware(http.HandlerFunc(shareDocument)))
+
+	// MCP (Model Context Protocol) — Streamable HTTP transport
+	// Handles GET and POST at /v1/mcp for MCP session negotiation and tool calls.
+	mux.Handle("/v1/mcp", ApiAuthMiddleware(MCPHandler))
 
 	// Web Search
 	mux.Handle("POST /v1/search", ApiAuthMiddleware(http.HandlerFunc(webSearch)))
