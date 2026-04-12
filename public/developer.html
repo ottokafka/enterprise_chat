@@ -563,7 +563,26 @@
 
       <!-- Image Gen -->
       <h2>Image Generation</h2>
-      <p class="section-desc">Generate images from a textual input prompt, returned as base64 encoded strings.</p>
+      <p class="section-desc">Generate high-quality images from textual descriptions. The API supports returning direct file URLs (recommended) or raw base64 data.</p>
+      
+      <div class="response-label">Option 1: URL Response (Recommended)</div>
+      <p class="section-desc">The server generates the image, uses LLM-driven naming for the file, saves it locally, and returns a public URL. This is optimal for chat interfaces and avoids bloating session memory.</p>
+      <pre><code class="language-bash example-code">curl http://localhost:4445/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
+  -d '{
+    "prompt": "a cyberpunk futuristic city at sunset",
+    "size": "1024x1024",
+    "response_format": "url"
+  }'</code></pre>
+      <div class="response-label">Response</div>
+      <pre><code class="language-json">{
+  "created": 1728576000,
+  "data": [ { "url": "http://localhost:4445/images/cyberpunk_city_sunset_20260413123000.jpg" } ]
+}</code></pre>
+
+      <div class="response-label">Option 2: Base64 JSON</div>
+      <p class="section-desc">Returns the raw image data as a base64 string. Use this if you need to process the image data immediately without local storage.</p>
       <pre><code class="language-bash example-code">curl http://localhost:4445/v1/images/generations \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
@@ -575,7 +594,7 @@
       <div class="response-label">Response</div>
       <pre><code class="language-json">{
   "created": 1728576000,
-  "data": [ { "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" } ]
+  "data": [ { "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ..." } ]
 }</code></pre>
 
       <!-- Rerank -->
