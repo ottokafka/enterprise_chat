@@ -346,6 +346,16 @@ func processIncomingFile(filename, contentType string, data []byte) ([]processed
 // ─────────────────────────────────────────────────────────────────────────────
 
 func openAiChat(w http.ResponseWriter, r *http.Request) {
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		origin = fmt.Sprintf("%s://%s", scheme, r.Host)
+	}
+	ctx := context.WithValue(r.Context(), "baseURL", origin)
+
 	// Parse the multipart form — multer sends files + JSON fields
 	if err := r.ParseMultipartForm(MaxUploadBytes); err != nil {
 		// Not multipart — try JSON body
@@ -609,6 +619,37 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 		params.Tools = append(params.Tools, smdTool[0])
 	}
 
+	// Always inject the image_generation tool
+	imgGenToolStr := `[{
+		"type": "function",
+		"function": {
+			"name": "image_generation",
+			"description": "Generate an image based on a prompt. Returns the generated image URL as JSON. You MUST reply to the user using markdown to render the image: ![Generated Image](<url>)",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"prompt": {
+						"type": "string",
+						"description": "A detailed text description of the image to generate."
+					},
+					"size": {
+						"type": "string",
+						"description": "The dimensions of the image, e.g. '1024x1024'. Default is '1024x1024'."
+					},
+					"steps": {
+						"type": "integer",
+						"description": "Number of inference steps (quality). Default is 20."
+					}
+				},
+				"required": ["prompt"]
+			}
+		}
+	}]`
+	var imgTool []openai.ChatCompletionToolParam
+	if err := json.Unmarshal([]byte(imgGenToolStr), &imgTool); err == nil && len(imgTool) > 0 {
+		params.Tools = append(params.Tools, imgTool[0])
+	}
+
 	// Helper to send progress via streaming
 	var flusher http.Flusher
 	var canFlush bool
@@ -696,6 +737,14 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 						progressCb(fmt.Sprintf("[search_my_documents] Searching user documents for: %s", args.Query))
 						
 						_, textContent, _ := searchMyDocumentsMCPTool(r.Context(), nil, args)
+						toolResult = textContent.Text
+
+					case "image_generation":
+						var args ImageGenerationInput
+						json.Unmarshal([]byte(tc.Function.Arguments), &args)
+						progressCb(fmt.Sprintf("[image_generation] Generating image for: %s", args.Prompt))
+
+						_, textContent, _ := imageGenerationMCPTool(ctx, nil, args)
 						toolResult = textContent.Text
 
 					default:
@@ -855,6 +904,23 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 				progressCb(fmt.Sprintf("[search_my_documents] Searching user documents for: %s", args.Query))
 				
 				_, textContent, _ := searchMyDocumentsMCPTool(r.Context(), nil, args)
+				toolMsgBytes, _ := json.Marshal(map[string]interface{}{
+					"role":         "tool",
+					"tool_call_id": tcID,
+					"content":      textContent.Text,
+				})
+				var toolUnion openai.ChatCompletionMessageParamUnion
+				json.Unmarshal(toolMsgBytes, &toolUnion)
+				params.Messages = append(params.Messages, toolUnion)
+				// Loop again to give context to model
+				continue
+
+			case "image_generation":
+				var args ImageGenerationInput
+				json.Unmarshal([]byte(tcAccumulator), &args)
+				progressCb(fmt.Sprintf("[image_generation] Generating image for: %s", args.Prompt))
+				
+				_, textContent, _ := imageGenerationMCPTool(ctx, nil, args)
 				toolMsgBytes, _ := json.Marshal(map[string]interface{}{
 					"role":         "tool",
 					"tool_call_id": tcID,

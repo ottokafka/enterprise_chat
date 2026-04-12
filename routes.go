@@ -110,6 +110,9 @@ func InitRoutes() *http.ServeMux {
 	mux.Handle("GET /api/user", CheckAuthMiddleware(http.HandlerFunc(GetUserHandler)))
 	mux.Handle("GET /api/users", CheckAuthMiddleware(http.HandlerFunc(GetAllUsersHandler)))
 
+	// Map images static directory
+	mux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir("./images"))))
+
 	// Map catch-all SPA router (requires Go 1.22+ routing syntax)
 	mux.HandleFunc("/", SpaHandler)
 

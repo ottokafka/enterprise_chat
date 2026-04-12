@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -213,6 +214,46 @@ func searchMyDocumentsMCPTool(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// image_generation — MCP Tool for generating images
+// ─────────────────────────────────────────────────────────────────────────────
+
+type ImageGenerationInput struct {
+	Prompt string `json:"prompt" jsonschema:"The text description of the image to generate"`
+	Size   string `json:"size"   jsonschema:"The size of the image, e.g., '1024x1024' or '512x512' (default 1024x1024)"`
+	Steps  int    `json:"steps"  jsonschema:"The number of inference steps for quality (default 20)"`
+}
+
+func imageGenerationMCPTool(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	input ImageGenerationInput,
+) (*mcp.CallToolResult, mcp.TextContent, error) {
+	if input.Prompt == "" {
+		return &mcp.CallToolResult{IsError: true}, mcp.TextContent{Text: "Error: prompt must not be empty"}, nil
+	}
+	if input.Size == "" {
+		input.Size = "1024x1024"
+	}
+	if input.Steps <= 0 {
+		input.Steps = 20
+	}
+
+	baseURL := ""
+	if v, ok := ctx.Value("baseURL").(string); ok {
+		baseURL = v
+	}
+
+	url, err := GenerateImageFromTool(input.Prompt, input.Size, input.Steps, baseURL)
+	if err != nil {
+		return &mcp.CallToolResult{IsError: true}, mcp.TextContent{Text: fmt.Sprintf("Error generating image: %v", err)}, nil
+	}
+
+	// Make sure we return JSON with url format as required by the LLM
+	resBytes, _ := json.Marshal(map[string]string{"url": url})
+	return nil, mcp.TextContent{Text: string(resBytes)}, nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // InitMCPServer builds the server and HTTP handler.
 // Call this once from main() before InitRoutes().
 // ─────────────────────────────────────────────────────────────────────────────
@@ -239,6 +280,11 @@ func InitMCPServer() {
 		Name:        "search_my_documents",
 		Description: "Search the user's uploaded documents using semantic + keyword hybrid search with reranking. Use this when the user asks about something that might be in their uploaded files, reports, or shared documents.",
 	}, searchMyDocumentsMCPTool)
+
+	mcp.AddTool(MCPServer, &mcp.Tool{
+		Name:        "image_generation",
+		Description: "Generate an image based on a text prompt. Returns a JSON containing the URL of the generated image. You should reply to the user with a markdown image using the returned URL: ![Generated Image](<url>).",
+	}, imageGenerationMCPTool)
 
 	// ── Create the Streamable HTTP handler (MCP 2025-03-26 compliant) ─────────
 	// NewStreamableHTTPHandler wraps the server so every incoming HTTP request
