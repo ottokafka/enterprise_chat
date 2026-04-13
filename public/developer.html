@@ -297,6 +297,55 @@
 
     <!-- Documentation Sections -->
     <div id="docs-container">
+      <!-- Models -->
+      <h2>Models</h2>
+      <p class="section-desc">List available models to see which one you should use for your requests. Supports both OpenAI-compatible and Ollama-style formats.</p>
+      <pre><code class="language-bash example-code">curl http://localhost:4445/v1/models \
+  -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>"</code></pre>
+      <div class="response-label">Response</div>
+      <pre><code class="language-json">{
+  "models": [
+    {
+      "name": "Qwen3.5-35B-A3B-Q4_K_M.gguf",
+      "model": "Qwen3.5-35B-A3B-Q4_K_M.gguf",
+      "modified_at": "",
+      "size": "",
+      "digest": "",
+      "type": "model",
+      "description": "",
+      "tags": [""],
+      "capabilities": ["completion", "multimodal"],
+      "parameters": "",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "",
+        "families": [""],
+        "parameter_size": "",
+        "quantization_level": ""
+      }
+    }
+  ],
+  "object": "list",
+  "data": [
+    {
+      "id": "Qwen3.5-35B-A3B-Q4_K_M.gguf",
+      "aliases": [],
+      "tags": [],
+      "object": "model",
+      "created": 1776063392,
+      "owned_by": "llamacpp",
+      "meta": {
+        "vocab_type": 2,
+        "n_vocab": 248320,
+        "n_ctx_train": 262144,
+        "n_embd": 2048,
+        "n_params": 34660610688,
+        "size": 22005033472
+      }
+    }
+  ]
+}</code></pre>
 
       <!-- Normal Chat -->
       <h2>Normal Chat Completion</h2>
@@ -305,7 +354,7 @@
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
   -d '{
-    "model": "Qwen3.5-35B-A3B-GGUF",
+    "model": "Qwen3.5-35B-A3B-Q4_K_M.gguf",
     "messages": [
       { "role": "system", "content": "You are a helpful assistant." },
       { "role": "user", "content": "Hello!" }
@@ -327,7 +376,7 @@
         <code>multipart/form-data</code>.</p>
       <pre><code class="language-bash example-code">curl http://localhost:4445/v1/chat/completions \
   -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
-  -F "model=qwen3.5" \
+  -F "model=Qwen3.5-35B-A3B-Q4_K_M.gguf" \
   -F 'messages=[{"role": "user", "content": "Analyze these files."}]' \
   -F "file=@/path/to/report.pdf" \
   -F "file=@/path/to/data.xlsx"</code></pre>
@@ -348,7 +397,7 @@
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
   -d '{
-    "model": "Qwen3.5-35B-A3B-GGUF",
+    "model": "Qwen3.5-35B-A3B-Q4_K_M.gguf",
     "messages": [
       {
         "role": "user",
@@ -376,7 +425,7 @@
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
   -d '{
-    "model": "qwen3.5",
+    "model": "Qwen3.5-35B-A3B-Q4_K_M.gguf",
     "messages": [
       { "role": "user", "content": "What is the weather in Tokyo?" }
     ],
@@ -430,7 +479,7 @@
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
   -d '{
-    "model": "qwen3.5",
+    "model": "Qwen3.5-35B-A3B-Q4_K_M.gguf",
     "messages": [
       { "role": "user", "content": "What is the current stock price of NVIDIA?" }
     ],
@@ -443,7 +492,7 @@
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <span class="api-key-placeholder">API_KEY</span>" \
   -d '{
-    "model": "qwen3.5",
+    "model": "Qwen3.5-35B-A3B-Q4_K_M.gguf",
     "messages": [
       { "role": "user", "content": "Check the news for today." }
     ],

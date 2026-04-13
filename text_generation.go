@@ -5,7 +5,7 @@ package main
 // Implements:
 //   - File attachment processing: images (with resize via imaging), HEIC,
 //     PDF (via ImageMagick convert), XLSX (standard library), DOCX (archive/zip + encoding/xml)
-//   - POST /v1/chat/completions — pass-through to vLLM (non-streaming + SSE streaming)
+//   - POST /v1/chat/completions — pass-through to llama_cpp (non-streaming + SSE streaming)
 //
 // Library mapping from port_nodejs_to_golang.md:
 //   sharp       → github.com/disintegration/imaging  (pure Go, no CGO)
@@ -339,8 +339,51 @@ func processIncomingFile(filename, contentType string, data []byte) ([]processed
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// rawBodyLogTransport wraps the default HTTP transport and intercepts responses
+// from the llama_cpp backend that are NOT server-sent events (SSE).
+//
+// Root cause of silent failures: when the context window is exceeded, llama_cpp
+// returns HTTP 200 with a JSON error body instead of an SSE stream.  The
+// openai-go SSE parser sees no valid events, streamResp.Next() returns false
+// immediately, Err() returns nil, and the handler exits silently.
+//
+// This transport peeks at the raw body in those cases and logs it, making the
+// actual llama_cpp error message visible without modifying the response for the
+// openai-go library.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type rawBodyLogTransport struct {
+	base http.RoundTripper
+}
+
+func (t *rawBodyLogTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil || resp == nil {
+		return resp, err
+	}
+	ct := resp.Header.Get("Content-Type")
+	// Pass SSE streams through untouched so streaming works normally.
+	// Intercept everything else (typically JSON error bodies on HTTP 200).
+	if !strings.Contains(ct, "text/event-stream") {
+		rawBody, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr == nil && len(rawBody) > 0 {
+			preview := string(rawBody)
+			if len(preview) > 2048 {
+				preview = preview[:2048] + "…(truncated)"
+			}
+			log.Printf("[llama_cpp-raw] %s %s → HTTP %d | ct=%s | body=%s",
+				req.Method, req.URL.Path, resp.StatusCode, ct, preview)
+		}
+		// Restore the body so openai-go can still attempt to parse the response.
+		resp.Body = io.NopCloser(bytes.NewReader(rawBody))
+	}
+	return resp, err
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // @route  POST /v1/chat/completions
-// @desc   Chat completions proxy to local vLLM (OpenAI-compatible)
+// @desc   Chat completions proxy to local llama_cpp (OpenAI-compatible)
 //         Supports: text-only, file attachments, streaming
 // @access Private (apiAuth)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -507,6 +550,12 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 	// Re-encode messages as JSON to build openai params
 	messagesJSON, _ := json.Marshal(messages)
 
+	// Diagnostic: log payload size before calling the LLM.
+	// A large codebase can silently exceed the context window — this makes it visible.
+	estimatedPayloadBytes := len(messagesJSON)
+	log.Printf("[chat] → LLM request: model=%s stream=%v messages=%d estimatedPayloadBytes=%d maxTokens=%d",
+		model, stream, len(messages), estimatedPayloadBytes, maxTokens)
+
 	// Build openai messages — since messages are arbitrary maps, we pass them raw
 	// by marshaling into openai.ChatCompletionMessageParamUnion via JSON round-trip
 	var openaiMessages []openai.ChatCompletionMessageParamUnion
@@ -515,6 +564,11 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 	llmClient := openai.NewClient(
 		option.WithBaseURL(os.Getenv("MAIN_GPU_URL")),
 		option.WithAPIKey(os.Getenv("OPENAI_API_KEY")),
+		// rawBodyLogTransport logs any non-SSE response body (e.g. JSON error
+		// objects returned by llama_cpp on context-length exceeded).
+		option.WithHTTPClient(&http.Client{
+			Transport: &rawBodyLogTransport{base: http.DefaultTransport},
+		}),
 	)
 
 	params := openai.ChatCompletionNewParams{
@@ -678,13 +732,18 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Timeout context: prevents the handler from hanging indefinitely when llama_cpp
+	// stalls on a very large prompt or is under load.
+	llmCtx, llmCancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer llmCancel()
+
 	// ── Non-streaming Execution ───────────────────────────────────────────────
 	if !stream {
 		var finalWebResults []SearchResult
 
 		// Loop up to 5 times for multi-turn tool logic
 		for i := 0; i < 5; i++ {
-			resp, err := llmClient.Chat.Completions.New(context.Background(), params)
+			resp, err := llmClient.Chat.Completions.New(llmCtx, params)
 			if err != nil {
 				log.Printf("[chat] Error: %v\n", err)
 				http.Error(w, `{"error":"Chat completion failed"}`, http.StatusInternalServerError)
@@ -692,16 +751,21 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if len(resp.Choices) == 0 {
+				// llama_cpp returns 200 with empty choices on context overflow or token limit.
+				log.Printf("[chat] WARNING: LLM returned 0 choices — likely context overflow or token limit. "+
+					"model=%s estimatedPayloadBytes=%d usage=%+v", model, estimatedPayloadBytes, resp.Usage)
 				w.Header().Set("Content-Type", "application/json")
 				json.NewEncoder(w).Encode(resp)
 				return
 			}
+			log.Printf("[chat] ← LLM response: finish_reason=%s usage=%+v",
+				resp.Choices[0].FinishReason, resp.Usage)
 
 			msg := resp.Choices[0].Message
 
 			// If finish reason is tool_calls, we must handle them
 			if resp.Choices[0].FinishReason == "tool_calls" && len(msg.ToolCalls) > 0 {
-				// Append assistant's tool call message 
+				// Append assistant's tool call message
 				msgBytes, _ := json.Marshal(msg)
 				var unionMsg openai.ChatCompletionMessageParamUnion
 				json.Unmarshal(msgBytes, &unionMsg)
@@ -735,7 +799,7 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 						var args SearchMyDocsInput
 						json.Unmarshal([]byte(tc.Function.Arguments), &args)
 						progressCb(fmt.Sprintf("[search_my_documents] Searching user documents for: %s", args.Query))
-						
+
 						_, textContent, _ := searchMyDocumentsMCPTool(r.Context(), nil, args)
 						toolResult = textContent.Text
 
@@ -794,19 +858,20 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 	var finalWebResults []SearchResult
 
 	for i := 0; i < 5; i++ {
-		streamResp := llmClient.Chat.Completions.NewStreaming(context.Background(), params)
-		
+		streamResp := llmClient.Chat.Completions.NewStreaming(llmCtx, params)
+
 		var tcID string
 		var tcName string
 		var tcAccumulator string
 		var finishReason string
+		var receivedAnyContent bool // tracks whether ANY content chunk was written to the client
 
 		for streamResp.Next() {
 			chunk := streamResp.Current()
 
 			if len(chunk.Choices) > 0 {
 				delta := chunk.Choices[0].Delta
-				
+
 				// Keep track of finish reason
 				if chunk.Choices[0].FinishReason != "" {
 					finishReason = string(chunk.Choices[0].FinishReason)
@@ -831,6 +896,7 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 						if canFlush {
 							flusher.Flush()
 						}
+						receivedAnyContent = true
 					}
 				}
 			}
@@ -838,18 +904,78 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 
 		if err := streamResp.Err(); err != nil {
 			log.Printf("[chat] Stream error: %v\n", err)
+			// Inform the client via SSE so it doesn't hang silently
+			errChunk, _ := json.Marshal(map[string]any{
+				"error": map[string]any{
+					"message": fmt.Sprintf("LLM stream error: %v", err),
+					"type":    "stream_error",
+				},
+			})
+			fmt.Fprintf(w, "data: %s\n\n", errChunk)
+			if canFlush {
+				flusher.Flush()
+			}
 			break
 		}
+
+		// Guard: if the stream finished with no content and no finish_reason, the LLM
+		// almost certainly hit a context-window or token-limit issue and returned nothing.
+		// The rawBodyLogTransport above will have already logged the actual llama_cpp error body.
+		if !receivedAnyContent && finishReason == "" && tcName == "" {
+			approxTokens := estimatedPayloadBytes / 4
+			log.Printf("[chat] WARNING: streaming LLM returned no content and no finish_reason — "+
+				"likely context overflow or silent llama_cpp error. model=%s "+
+				"estimatedPayloadBytes=%d approxTokens≈%d (check [llama_cpp-raw] log above for actual error)",
+				model, estimatedPayloadBytes, approxTokens)
+
+			// Probe the llama_cpp /v1/models endpoint asynchronously: reveals the model's
+			// actual max_model_len (context window) so we can compare against approxTokens.
+			go func() {
+				probeURL := os.Getenv("MAIN_GPU_URL") + "/v1/models"
+				probeReq, err := http.NewRequest("GET", probeURL, nil)
+				if err != nil {
+					log.Printf("[chat] llama_cpp models probe setup failed: %v", err)
+					return
+				}
+				probeReq.Header.Set("Authorization", "Bearer "+os.Getenv("OPENAI_API_KEY"))
+				probeClient := &http.Client{Timeout: 5 * time.Second}
+				probeResp, err := probeClient.Do(probeReq)
+				if err != nil {
+					log.Printf("[chat] llama_cpp models probe failed: %v", err)
+					return
+				}
+				defer probeResp.Body.Close()
+				body, _ := io.ReadAll(probeResp.Body)
+				log.Printf("[chat] llama_cpp /v1/models → HTTP %d: %s", probeResp.StatusCode, string(body))
+			}()
+
+			errChunk, _ := json.Marshal(map[string]any{
+				"error": map[string]any{
+					"message": fmt.Sprintf(
+						"The model returned no response. Input is ~%d tokens — it may exceed the context window. Check server logs for details.",
+						approxTokens,
+					),
+					"type": "context_length_exceeded",
+				},
+			})
+			fmt.Fprintf(w, "data: %s\n\n", errChunk)
+			if canFlush {
+				flusher.Flush()
+			}
+			break
+		}
+		log.Printf("[chat] ← stream turn %d complete: finish_reason=%q receivedContent=%v tcName=%q",
+			i, finishReason, receivedAnyContent, tcName)
 
 		if finishReason == "tool_calls" && tcName != "" {
 			// Save assistant tool call request
 			astMsgBytes, _ := json.Marshal(map[string]interface{}{
 				"role": "assistant",
 				"tool_calls": []map[string]interface{}{{
-					"id": tcID,
+					"id":   tcID,
 					"type": "function",
 					"function": map[string]interface{}{
-						"name": tcName,
+						"name":      tcName,
 						"arguments": tcAccumulator,
 					},
 				}},
@@ -902,7 +1028,7 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 				var args SearchMyDocsInput
 				json.Unmarshal([]byte(tcAccumulator), &args)
 				progressCb(fmt.Sprintf("[search_my_documents] Searching user documents for: %s", args.Query))
-				
+
 				_, textContent, _ := searchMyDocumentsMCPTool(r.Context(), nil, args)
 				toolMsgBytes, _ := json.Marshal(map[string]interface{}{
 					"role":         "tool",
@@ -919,7 +1045,7 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 				var args ImageGenerationInput
 				json.Unmarshal([]byte(tcAccumulator), &args)
 				progressCb(fmt.Sprintf("[image_generation] Generating image for: %s", args.Prompt))
-				
+
 				_, textContent, _ := imageGenerationMCPTool(ctx, nil, args)
 				toolMsgBytes, _ := json.Marshal(map[string]interface{}{
 					"role":         "tool",
@@ -931,7 +1057,7 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 				params.Messages = append(params.Messages, toolUnion)
 				// Loop again to give context to model
 				continue
-			
+
 			default:
 				// Tool not handled locally
 				// Need to stream this tool call chunk to client
@@ -942,10 +1068,10 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 								"content": nil,
 								"tool_calls": []map[string]interface{}{
 									{
-										"id": tcID,
+										"id":   tcID,
 										"type": "function",
 										"function": map[string]interface{}{
-											"name": tcName,
+											"name":      tcName,
 											"arguments": tcAccumulator,
 										},
 									},
@@ -960,6 +1086,8 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 				if canFlush {
 					flusher.Flush()
 				}
+				// NOTE: this `break` exits only the switch, NOT the for loop.
+				// The unconditional `break` below (after the source footer) exits the for loop.
 				break
 			}
 		}
@@ -988,7 +1116,12 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 				flusher.Flush()
 			}
 		}
-		
+
+		// Signal the client that the stream is complete.
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+		if canFlush {
+			flusher.Flush()
+		}
 		break
 	}
 }
@@ -1033,7 +1166,7 @@ func fetchAnthropicURLImage(imageURL string) (string, error) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // @route  POST /v1/messages
-// @desc   Chat completions proxy accepting Anthropic format and routing to local vLLM
+// @desc   Chat completions proxy accepting Anthropic format and routing to local llama_cpp
 // ─────────────────────────────────────────────────────────────────────────────
 
 func anthropicChat(w http.ResponseWriter, r *http.Request) {
