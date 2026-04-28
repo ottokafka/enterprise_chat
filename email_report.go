@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net/smtp"
@@ -112,6 +113,34 @@ func weeklyHTMLReport(data []UsageRow) string {
 
 // ─── email_config.go + email_report.go logic ─────────────────────────────────
 
+// loginAuth implements the LOGIN authentication mechanism.
+type loginAuth struct {
+	username, password string
+}
+
+// LoginAuth returns an Auth that implements the LOGIN mechanism.
+func LoginAuth(username, password string) smtp.Auth {
+	return &loginAuth{username, password}
+}
+
+func (a *loginAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+	return "LOGIN", []byte{}, nil
+}
+
+func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+	if more {
+		switch string(fromServer) {
+		case "Username:":
+			return []byte(a.username), nil
+		case "Password:":
+			return []byte(a.password), nil
+		default:
+			return nil, fmt.Errorf("unknown challenge from server: %s", string(fromServer))
+		}
+	}
+	return nil, nil
+}
+
 // mailOut sends an HTML email via SMTP (mirrors the JS mail_out function).
 func mailOut(htmlBody string) error {
 	host := os.Getenv("EMAIL_HOST")
@@ -120,7 +149,7 @@ func mailOut(htmlBody string) error {
 	pass := os.Getenv("EMAIL_PASS")
 
 	if port == "" {
-		port = "1025"
+		port = "1025" // Microsoft 365 default
 	}
 
 	addr := fmt.Sprintf("%s:%s", host, port)
@@ -143,16 +172,65 @@ func mailOut(htmlBody string) error {
 
 	msg := []byte(headers + "\r\n\r\n" + htmlBody)
 
-	var auth smtp.Auth
-	if user != "" && pass != "" {
-		auth = smtp.PlainAuth("", user, pass, host)
+	// Microsoft 365 often requires STARTTLS and LOGIN auth.
+	// We use an explicit client handshake to ensure STARTTLS is handled.
+	c, err := smtp.Dial(addr)
+	if err != nil {
+		fmt.Printf("failed to dial SMTP: %v\n", err)
+		return err
+	}
+	defer c.Close()
+
+	// Upgrade to TLS if supported
+	if ok, _ := c.Extension("STARTTLS"); ok {
+		config := &tls.Config{ServerName: host}
+		if err := c.StartTLS(config); err != nil {
+			fmt.Printf("failed to start TLS: %v\n", err)
+			return err
+		}
 	}
 
-	if err := smtp.SendMail(addr, auth, from, allRecipients, msg); err != nil {
-		fmt.Printf("email failed to send: %v", err)
+	// Authenticate
+	if user != "" && pass != "" {
+		var auth smtp.Auth
+		// Microsoft 365/Outlook hosts usually require LOGIN auth.
+		if strings.Contains(host, "outlook") || strings.Contains(host, "office365") {
+			auth = LoginAuth(user, pass)
+		} else {
+			auth = smtp.PlainAuth("", user, pass, host)
+		}
+
+		if err := c.Auth(auth); err != nil {
+			fmt.Printf("authentication failed: %v\n", err)
+			return err
+		}
+	}
+
+	// Set sender and recipients
+	if err := c.Mail(from); err != nil {
+		return err
+	}
+	for _, addr := range allRecipients {
+		if err := c.Rcpt(addr); err != nil {
+			return err
+		}
+	}
+
+	// Send the data
+	w, err := c.Data()
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(msg)
+	if err != nil {
+		return err
+	}
+	err = w.Close()
+	if err != nil {
 		return err
 	}
 
+	c.Quit()
 	log.Printf("email sent successfully via %s", addr)
 	return nil
 }
