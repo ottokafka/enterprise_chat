@@ -102,6 +102,13 @@ func InitRoutes() *http.ServeMux {
 	})))
 	mux.Handle("GET /developer", CheckAuthMiddleware(http.HandlerFunc(DeveloperDocsHandler)))
 
+	// HTML Preview Endpoint
+	mux.Handle("POST /preview", CheckAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		html := r.FormValue("html")
+		w.Write([]byte(html))
+	})))
+
 	// Microsoft Azure SSO Routes
 	mux.HandleFunc("GET /login", LoginHandler)
 	mux.HandleFunc("GET /redirect", RedirectHandler)

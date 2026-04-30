@@ -94,9 +94,88 @@ const ChatApp = (() => {
     ).join('');
     // Re-highlight code after render
     if (window.hljs) log.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+    enhanceCodeBlocks(log);
     scrollToBottom(true);
     // Async: populate branch nav for each user message
     messages.forEach((msg, i) => { if (msg.role === 'user') updateBranchNav(msg, i); });
+  }
+
+  function enhanceCodeBlocks(logEl) {
+    if (!logEl) return;
+    logEl.querySelectorAll('pre').forEach(pre => {
+      if (pre.dataset.enhanced) return;
+      const codeEl = pre.querySelector('code');
+      if (!codeEl) return;
+      pre.dataset.enhanced = 'true';
+      pre.style.position = 'relative';
+
+      const btnContainer = document.createElement('div');
+      btnContainer.className = 'code-actions';
+      btnContainer.style.position = 'absolute';
+      btnContainer.style.top = '6px';
+      btnContainer.style.right = '6px';
+      btnContainer.style.display = 'flex';
+      btnContainer.style.gap = '6px';
+      btnContainer.style.zIndex = '10';
+
+      const isHtml = codeEl.classList.contains('language-html') || codeEl.classList.contains('language-xml');
+
+      if (isHtml) {
+        const previewBtn = document.createElement('button');
+        previewBtn.className = 'msg-edit-btn';
+        previewBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg> Preview`;
+        previewBtn.title = "Preview HTML";
+        previewBtn.style.background = '#2d2d2d';
+        previewBtn.style.color = '#e0e0e0';
+        previewBtn.style.border = '1px solid #444';
+        previewBtn.style.borderRadius = '4px';
+        previewBtn.style.padding = '4px 8px';
+        previewBtn.style.cursor = 'pointer';
+        previewBtn.style.display = 'flex';
+        previewBtn.style.alignItems = 'center';
+        previewBtn.style.gap = '4px';
+        previewBtn.style.fontSize = '12px';
+        previewBtn.onclick = () => {
+          const form = document.createElement('form');
+          form.method = 'POST';
+          form.action = '/preview';
+          form.target = '_blank';
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = 'html';
+          input.value = codeEl.textContent;
+          form.appendChild(input);
+          document.body.appendChild(form);
+          form.submit();
+          document.body.removeChild(form);
+        };
+        btnContainer.appendChild(previewBtn);
+      }
+
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'msg-edit-btn';
+      copyBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy`;
+      copyBtn.title = "Copy Code";
+      copyBtn.style.background = '#2d2d2d';
+      copyBtn.style.color = '#e0e0e0';
+      copyBtn.style.border = '1px solid #444';
+      copyBtn.style.borderRadius = '4px';
+      copyBtn.style.padding = '4px 8px';
+      copyBtn.style.cursor = 'pointer';
+      copyBtn.style.display = 'flex';
+      copyBtn.style.alignItems = 'center';
+      copyBtn.style.gap = '4px';
+      copyBtn.style.fontSize = '12px';
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(codeEl.textContent);
+        const originalHtml = copyBtn.innerHTML;
+        copyBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> Copied!`;
+        setTimeout(() => copyBtn.innerHTML = originalHtml, 2000);
+      };
+      btnContainer.appendChild(copyBtn);
+
+      pre.appendChild(btnContainer);
+    });
   }
 
   function buildUserCard(msg, index) {
@@ -436,6 +515,7 @@ const ChatApp = (() => {
         wrapper.outerHTML = buildAssistantCard(assistMsg, finalIdx);
         const log = $('chat-log');
         if (window.hljs) log?.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+        enhanceCodeBlocks(log);
       }
 
       // Refresh sidebar (title might have been set for first message)
@@ -714,7 +794,9 @@ const ChatApp = (() => {
       const wrapper = $('streaming-wrapper');
       if (wrapper) {
         wrapper.outerHTML = buildAssistantCard(assistMsg, messages.length - 1);
-        if (window.hljs) $('chat-log')?.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+        const log = $('chat-log');
+        if (window.hljs) log?.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+        enhanceCodeBlocks(log);
       }
     } catch (err) {
       if (err.name !== 'AbortError') console.error(err);
