@@ -1036,11 +1036,23 @@ const ChatApp = (() => {
     await loadUserProfile();
     renderEmptyState();
     setupInputListeners();
+    setupChatLogListeners();
     setupPasteListener();
     setupSidebarToggle();
     setupSidebarClickOutside();
     initIngestionUI();
     initSystemPromptUI();
+  }
+
+  function setupChatLogListeners() {
+    const log = $('chat-log');
+    if (!log) return;
+    log.addEventListener('click', e => {
+      // Check if clicked element is an image within .markdown-body
+      if (e.target.tagName === 'IMG' && e.target.closest('.markdown-body')) {
+        openImageModal(e.target.src);
+      }
+    });
   }
 
   function setupInputListeners() {

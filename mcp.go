@@ -224,8 +224,8 @@ func searchMyDocumentsMCPTool(
 
 type ImageGenerationInput struct {
 	Prompt string `json:"prompt" jsonschema:"The text description of the image to generate"`
-	Size   string `json:"size"   jsonschema:"The size of the image, e.g., '1024x1024' or '512x512' (default 1024x1024)"`
-	Steps  int    `json:"steps"  jsonschema:"The number of inference steps for quality (default 20)"`
+	Size   string `json:"size"   jsonschema:"The size of the image, e.g., '1024x1024' or '512x512' (default 512x512)"`
+	Steps  int    `json:"steps"  jsonschema:"The number of inference steps for quality (default 6)"`
 }
 
 func imageGenerationMCPTool(
@@ -400,11 +400,11 @@ func GetOpenAIToolsFromMCP(webSearch bool) []openai.ChatCompletionToolParam {
 						},
 						"size": {
 							"type": "string",
-							"description": "The dimensions of the image, e.g. '1024x1024'. Default is '1024x1024'."
+							"description": "The dimensions of the image, e.g. '1024x1024'. Default is '512x512'."
 						},
 						"steps": {
 							"type": "integer",
-							"description": "Number of inference steps (quality). Default is 20."
+							"description": "Number of inference steps (quality). Default is 6."
 						}
 					},
 					"required": ["prompt"]
@@ -496,7 +496,6 @@ func DispatchMCPTool(ctx context.Context, req *mcp.CallToolRequest, progressCb f
 		return nil, fmt.Errorf("unknown tool %q", name)
 	}
 }
-
 
 // MergeTools combines ad-hoc tools from a request with the dynamic tools from the MCP server.
 func MergeTools(adHocTools json.RawMessage, webSearch bool) []openai.ChatCompletionToolParam {
@@ -597,7 +596,7 @@ func runNonStreamingLoop(ctx context.Context, p AgentParams, params openai.ChatC
 			handledAny := false
 			for _, tc := range msg.ToolCalls {
 				toolResult := ""
-				
+
 				var rawArgs interface{}
 				json.Unmarshal([]byte(tc.Function.Arguments), &rawArgs)
 
@@ -610,7 +609,7 @@ func runNonStreamingLoop(ctx context.Context, p AgentParams, params openai.ChatC
 				})
 				var callReq *mcp.CallToolRequest
 				json.Unmarshal(callReqJSON, &callReq)
-				
+
 				res, err := DispatchMCPTool(p.RequestCtx, callReq, progressCb)
 				if err != nil {
 					toolResult = fmt.Sprintf("Error calling tool: %v", err)
@@ -752,7 +751,7 @@ func runStreamingLoop(ctx context.Context, p AgentParams, params openai.ChatComp
 			params.Messages = append(params.Messages, astMsg)
 
 			toolResult := ""
-			
+
 			var rawArgs interface{}
 			json.Unmarshal([]byte(tcAccumulator), &rawArgs)
 

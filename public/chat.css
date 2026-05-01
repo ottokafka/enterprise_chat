@@ -547,6 +547,17 @@ body {
     text-decoration: underline;
 }
 
+.markdown-body img {
+    max-width: 100%;
+    height: auto;
+    max-height: 512px;
+    object-fit: contain;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-mid);
+    margin: 10px 0;
+    cursor: zoom-in;
+}
+
 /* ── Source Accordion ─────────────────── */
 .source-accordion {
     background: var(--bg-surface);
