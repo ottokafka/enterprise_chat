@@ -694,6 +694,23 @@ const ChatApp = (() => {
     formData.append('messages', JSON.stringify(conversation));
     formData.append('stream', 'true');
 
+    // Re-attach files from the edited message
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg && lastMsg.attachments && lastMsg.attachments.length > 0) {
+      for (const att of lastMsg.attachments) {
+        if (att.dataUrl) {
+          try {
+            const res = await fetch(att.dataUrl);
+            const blob = await res.blob();
+            const file = new File([blob], att.name || 'attachment', { type: att.type || blob.type });
+            formData.append('files', file, file.name);
+          } catch (e) {
+            console.error('Failed to convert attachment to file', e);
+          }
+        }
+      }
+    }
+
     isStreaming = true;
     abortController = new AbortController();
     setStreamingUI(true);
