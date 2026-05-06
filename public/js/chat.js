@@ -933,6 +933,14 @@ const ChatApp = (() => {
   function renderFileChips() {
     const row = $('file-chips');
     if (!row) return;
+    
+    const emptyState = $('empty-state');
+    if (emptyState) {
+      const input = $('chat-input');
+      const hasText = input && input.value.trim().length > 0;
+      emptyState.style.display = (attachedFiles.length > 0 || hasText) ? 'none' : 'flex';
+    }
+
     if (attachedFiles.length === 0) { row.innerHTML = ''; return; }
     row.innerHTML = attachedFiles.map((f, i) => {
       if (f.dataUrl) {
@@ -1113,6 +1121,11 @@ const ChatApp = (() => {
     // Auto-resize textarea
     input?.addEventListener('input', () => {
       adjustChatInputHeight();
+      const emptyState = $('empty-state');
+      if (emptyState) {
+        const hasText = input.value.trim().length > 0;
+        emptyState.style.display = (hasText || attachedFiles.length > 0) ? 'none' : 'flex';
+      }
     });
 
     fileBtn?.addEventListener('click', () => fileInput?.click());
@@ -1169,7 +1182,9 @@ const ChatApp = (() => {
     input.style.height = '24px';
     
     // Set new height based on scrollHeight, with a reasonable max limit
-    const newHeight = Math.min(input.scrollHeight, 400); 
+    // On mobile, limit to a smaller height (e.g. 120px) to ensure the send button stays visible
+    const maxHeight = window.innerWidth <= 700 ? 120 : 400;
+    const newHeight = Math.min(input.scrollHeight, maxHeight); 
     input.style.height = newHeight + 'px';
     
     // Ensure the cursor remains visible if the text exceeds the max height

@@ -1462,6 +1462,10 @@ input:checked+.slider:before {
         position: fixed;
         transform: translateX(0);
     }
+
+    #chat-input {
+        max-height: 120px !important;
+    }
 }
 
 /* ── System Prompt Selector ──────────────── */
