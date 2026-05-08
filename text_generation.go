@@ -982,3 +982,43 @@ func anthropicChat(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @route  GET /v1/models
+// @desc   Models proxy to local llama_cpp
+// ─────────────────────────────────────────────────────────────────────────────
+
+func getModelsHandler(w http.ResponseWriter, r *http.Request) {
+	baseURL := os.Getenv("MAIN_GPU_URL")
+	if !strings.HasSuffix(baseURL, "/") {
+		baseURL += "/"
+	}
+	targetURL := baseURL + "models"
+
+	httpReq, err := http.NewRequestWithContext(r.Context(), "GET", targetURL, nil)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to create upstream request"}`, http.StatusInternalServerError)
+		return
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+os.Getenv("OPENAI_API_KEY"))
+
+	client := &http.Client{}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		log.Printf("[models-proxy] Error: %v\n", err)
+		http.Error(w, `{"error":"Upstream connection failed"}`, http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	if origin := r.Header.Get("Origin"); origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+	} else {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	}
+	
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
