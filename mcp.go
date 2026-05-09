@@ -218,45 +218,6 @@ func searchMyDocumentsMCPTool(
 	return nil, mcp.TextContent{Text: strings.TrimSpace(sb.String())}, nil
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// image_generation — MCP Tool for generating images
-// ─────────────────────────────────────────────────────────────────────────────
-
-type ImageGenerationInput struct {
-	Prompt string `json:"prompt" jsonschema:"The text description of the image to generate"`
-	Size   string `json:"size"   jsonschema:"The size of the image, e.g., '1024x1024' or '512x512' (default 512x512)"`
-	Steps  int    `json:"steps"  jsonschema:"The number of inference steps for quality (default 6)"`
-}
-
-func imageGenerationMCPTool(
-	ctx context.Context,
-	_ *mcp.CallToolRequest,
-	input ImageGenerationInput,
-) (*mcp.CallToolResult, mcp.TextContent, error) {
-	if input.Prompt == "" {
-		return &mcp.CallToolResult{IsError: true}, mcp.TextContent{Text: "Error: prompt must not be empty"}, nil
-	}
-	if input.Size == "" {
-		input.Size = "1024x1024"
-	}
-	if input.Steps <= 0 {
-		input.Steps = 20
-	}
-
-	baseURL := ""
-	if v, ok := ctx.Value("baseURL").(string); ok {
-		baseURL = v
-	}
-
-	url, err := GenerateImageFromTool(input.Prompt, input.Size, input.Steps, baseURL)
-	if err != nil {
-		return &mcp.CallToolResult{IsError: true}, mcp.TextContent{Text: fmt.Sprintf("Error generating image: %v", err)}, nil
-	}
-
-	// Make sure we return JSON with url format as required by the LLM
-	resBytes, _ := json.Marshal(map[string]string{"url": url})
-	return nil, mcp.TextContent{Text: string(resBytes)}, nil
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // InitMCPServer builds the server and HTTP handler.
@@ -286,10 +247,6 @@ func InitMCPServer() {
 		Description: "Search the user's uploaded documents using semantic + keyword hybrid search with reranking. Use this when the user asks about something that might be in their uploaded files, reports, or shared documents.",
 	}, searchMyDocumentsMCPTool)
 
-	mcp.AddTool(MCPServer, &mcp.Tool{
-		Name:        "image_generation",
-		Description: "Generate an image based on a text prompt. Returns a JSON containing the URL of the generated image. You should reply to the user with a markdown image using the returned URL: ![Generated Image](<url>).",
-	}, imageGenerationMCPTool)
 
 	// ── Create the Streamable HTTP handler (MCP 2025-03-26 compliant) ─────────
 	// NewStreamableHTTPHandler wraps the server so every incoming HTTP request
@@ -386,31 +343,6 @@ func GetOpenAIToolsFromMCP(webSearch bool) []openai.ChatCompletionToolParam {
 				}
 			}
 		}]`,
-		`[{
-			"type": "function",
-			"function": {
-				"name": "image_generation",
-				"description": "Generate an image based on a prompt. Returns the generated image URL as JSON. You MUST reply to the user using markdown to render the image: ![Generated Image](<url>)",
-				"parameters": {
-					"type": "object",
-					"properties": {
-						"prompt": {
-							"type": "string",
-							"description": "A detailed text description of the image to generate."
-						},
-						"size": {
-							"type": "string",
-							"description": "The dimensions of the image, e.g. '1024x1024'. Default is '512x512'."
-						},
-						"steps": {
-							"type": "integer",
-							"description": "Number of inference steps (quality). Default is 6."
-						}
-					},
-					"required": ["prompt"]
-				}
-			}
-		}]`,
 	}
 
 	var results []openai.ChatCompletionToolParam
@@ -468,22 +400,6 @@ func DispatchMCPTool(ctx context.Context, req *mcp.CallToolRequest, progressCb f
 			progressCb(fmt.Sprintf("[search_my_documents] Searching user documents for: %s", in.Query))
 		}
 		res, txt, err := searchMyDocumentsMCPTool(ctx, req, in)
-		if err != nil {
-			return nil, err
-		}
-		if res != nil && res.IsError {
-			return res, nil
-		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&txt}}, nil
-
-	case "image_generation":
-		var in ImageGenerationInput
-		b, _ := json.Marshal(req.Params.Arguments)
-		json.Unmarshal(b, &in)
-		if progressCb != nil {
-			progressCb(fmt.Sprintf("[image_generation] Generating image for: %s", in.Prompt))
-		}
-		res, txt, err := imageGenerationMCPTool(ctx, req, in)
 		if err != nil {
 			return nil, err
 		}

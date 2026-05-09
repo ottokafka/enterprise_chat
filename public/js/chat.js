@@ -15,6 +15,7 @@ const ChatApp = (() => {
   let systemPrompts = [];
   let selectedSystemPromptId = 'none';
   let webSearchEnabled = false; // true when Web Search toggle is active
+  let imageGenEnabled = false;  // true when Image generation toggle is active
   let mcpEnabled = false;       // true when MCP endpoint (/v1/mcp) is active
 
   // ── DOM Helpers ───────────────────────────────────────────────────────────
@@ -391,62 +392,82 @@ const ChatApp = (() => {
     const reasoningStart = Date.now();
 
     try {
-      let requestConfig;
-      if (activeDocumentNames.size > 0) {
-        requestConfig = {
+      if (imageGenEnabled) {
+        const reqConfig = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            query: text,
-            document_names: Array.from(activeDocumentNames),
-            stream: true
+            prompt: text || 'a beautiful image',
+            size: '1024x1024',
+            steps: 20
           }),
           signal: abortController.signal,
         };
-      } else {
-        if (webSearchEnabled) {
-          formData.append('web_search', 'true');
-        }
-        requestConfig = {
-          method: 'POST',
-          body: formData,
-          signal: abortController.signal,
-        };
-      }
+        const response = await fetch('/v1/images/generations', reqConfig);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const url = data.data?.[0]?.url;
+        if (!url) throw new Error('No image returned');
 
-      const endpoint = activeDocumentNames.size > 0
+        contentBuffer = `![Generated Image](${url})`;
+        updateStreamingDOM(reasoningBuffer, contentBuffer, false, reasoningStart, true, false);
+      } else {
+        let requestConfig;
+        if (activeDocumentNames.size > 0) {
+          requestConfig = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: text,
+              document_names: Array.from(activeDocumentNames),
+              stream: true
+            }),
+            signal: abortController.signal,
+          };
+        } else {
+          if (webSearchEnabled) {
+            formData.append('web_search', 'true');
+          }
+          requestConfig = {
+            method: 'POST',
+            body: formData,
+            signal: abortController.signal,
+          };
+        }
+
+        const endpoint = activeDocumentNames.size > 0
           ? '/v1/rag'
           : mcpEnabled ? '/v1/mcp' : '/v1/chat/completions';
-      const response = await fetch(endpoint, requestConfig);
+        const response = await fetch(endpoint, requestConfig);
 
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
 
-      // Throttle UI updates
-      let lastUpdate = 0;
+        // Throttle UI updates
+        let lastUpdate = 0;
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop(); // keep the incomplete last line
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // keep the incomplete last line
 
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6).trim();
-          if (data === '[DONE]') break;
-          try {
-            const parsed = JSON.parse(data);
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') break;
+            try {
+              const parsed = JSON.parse(data);
 
-            if (parsed.type === 'citations') {
-              if (parsed.citations && parsed.citations.length > 0) {
-                contentBuffer += '\\n\\n**Sources:**\\n<div class="citations-container">\\n';
-                parsed.citations.forEach(c => {
-                  contentBuffer += `
+              if (parsed.type === 'citations') {
+                if (parsed.citations && parsed.citations.length > 0) {
+                  contentBuffer += '\\n\\n**Sources:**\\n<div class="citations-container">\\n';
+                  parsed.citations.forEach(c => {
+                    contentBuffer += `
 <details class="source-accordion">
   <summary>📄 ${escapeHtml(c.document_name)} (Chunk #${c.chunk_index})</summary>
   <div class="source-content">
@@ -455,32 +476,33 @@ const ChatApp = (() => {
   </div>
 </details>
 `;
-                });
-                contentBuffer += '</div>\\n';
+                  });
+                  contentBuffer += '</div>\\n';
+                }
+                continue;
               }
-              continue;
-            }
 
-            const delta = parsed?.choices?.[0]?.delta;
-            if (!delta) continue;
+              const delta = parsed?.choices?.[0]?.delta;
+              if (!delta) continue;
 
-            if (delta.reasoning_content) {
-              reasoningBuffer += delta.reasoning_content;
-              hasReasoning = true;
-            }
-            if (delta.content) {
-              contentBuffer += delta.content;
-            }
+              if (delta.reasoning_content) {
+                reasoningBuffer += delta.reasoning_content;
+                hasReasoning = true;
+              }
+              if (delta.content) {
+                contentBuffer += delta.content;
+              }
 
-            // Throttle DOM updates to ~20fps
-            const now = Date.now();
-            if (now - lastUpdate > 50) {
-              const isSearch = reasoningBuffer.includes('[search]');
-              updateStreamingDOM(reasoningBuffer, contentBuffer, hasReasoning, reasoningStart, false, isSearch);
-              lastUpdate = now;
-              scrollToBottom();
-            }
-          } catch { }
+              // Throttle DOM updates to ~20fps
+              const now = Date.now();
+              if (now - lastUpdate > 50) {
+                const isSearch = reasoningBuffer.includes('[search]');
+                updateStreamingDOM(reasoningBuffer, contentBuffer, hasReasoning, reasoningStart, false, isSearch);
+                lastUpdate = now;
+                scrollToBottom();
+              }
+            } catch { }
+          }
         }
       }
 
@@ -719,57 +741,78 @@ const ChatApp = (() => {
     const reasoningStart = Date.now();
 
     try {
-      let requestConfig;
-      if (activeDocumentNames.size > 0) {
-        const lastMsg = conversation[conversation.length - 1];
-        requestConfig = {
+      // Generate image
+      if (imageGenEnabled) {
+        const reqConfig = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            query: lastMsg.content,
-            document_names: Array.from(activeDocumentNames),
-            stream: true
+            prompt: conversation.length ? conversation[conversation.length - 1].content : 'a beautiful image',
+            size: '512x512',
+            steps: 5
           }),
           signal: abortController.signal,
         };
-      } else {
-        if (webSearchEnabled) {
-          formData.append('web_search', 'true');
-        }
-        requestConfig = {
-          method: 'POST',
-          body: formData,
-          signal: abortController.signal,
-        };
-      }
+        const response = await fetch('/v1/images/generations', reqConfig);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const url = data.data?.[0]?.url;
+        if (!url) throw new Error('No image returned');
 
-      const endpoint = activeDocumentNames.size > 0
+        contentBuffer = `![Generated Image](${url})`;
+        updateStreamingDOM(reasoningBuffer, contentBuffer, false, reasoningStart, true, false);
+      } else {
+        let requestConfig;
+        if (activeDocumentNames.size > 0) {
+          const lastMsg = conversation[conversation.length - 1];
+          requestConfig = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: lastMsg.content,
+              document_names: Array.from(activeDocumentNames),
+              stream: true
+            }),
+            signal: abortController.signal,
+          };
+        } else {
+          if (webSearchEnabled) {
+            formData.append('web_search', 'true');
+          }
+          requestConfig = {
+            method: 'POST',
+            body: formData,
+            signal: abortController.signal,
+          };
+        }
+
+        const endpoint = activeDocumentNames.size > 0
           ? '/v1/rag'
           : mcpEnabled ? '/v1/mcp' : '/v1/chat/completions';
-      const response = await fetch(endpoint, requestConfig);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let lineBuffer = '';
-      let lastUpdate = 0;
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        lineBuffer += decoder.decode(value, { stream: true });
-        const lines = lineBuffer.split('\n');
-        lineBuffer = lines.pop();
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6).trim();
-          if (data === '[DONE]') break;
-          try {
-            const parsed = JSON.parse(data);
+        const response = await fetch(endpoint, requestConfig);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let lineBuffer = '';
+        let lastUpdate = 0;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          lineBuffer += decoder.decode(value, { stream: true });
+          const lines = lineBuffer.split('\n');
+          lineBuffer = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') break;
+            try {
+              const parsed = JSON.parse(data);
 
-            if (parsed.type === 'citations') {
-              if (parsed.citations && parsed.citations.length > 0) {
-                contentBuffer += '\\n\\n**Sources:**\\n<div class="citations-container">\\n';
-                parsed.citations.forEach(c => {
-                  contentBuffer += `
+              if (parsed.type === 'citations') {
+                if (parsed.citations && parsed.citations.length > 0) {
+                  contentBuffer += '\\n\\n**Sources:**\\n<div class="citations-container">\\n';
+                  parsed.citations.forEach(c => {
+                    contentBuffer += `
 <details class="source-accordion">
   <summary>📄 ${escapeHtml(c.document_name)} (Chunk #${c.chunk_index})</summary>
   <div class="source-content">
@@ -778,23 +821,24 @@ const ChatApp = (() => {
   </div>
 </details>
 `;
-                });
-                contentBuffer += '</div>\\n';
+                  });
+                  contentBuffer += '</div>\\n';
+                }
+                continue;
               }
-              continue;
-            }
 
-            const delta = parsed?.choices?.[0]?.delta;
-            if (!delta) continue;
-            if (delta.reasoning_content) { reasoningBuffer += delta.reasoning_content; hasReasoning = true; }
-            if (delta.content) contentBuffer += delta.content;
-            const now = Date.now();
-            if (now - lastUpdate > 50) {
-              const isSearch = reasoningBuffer.includes('[search]');
-              updateStreamingDOM(reasoningBuffer, contentBuffer, hasReasoning, reasoningStart, false, isSearch);
-              lastUpdate = now; scrollToBottom();
-            }
-          } catch { }
+              const delta = parsed?.choices?.[0]?.delta;
+              if (!delta) continue;
+              if (delta.reasoning_content) { reasoningBuffer += delta.reasoning_content; hasReasoning = true; }
+              if (delta.content) contentBuffer += delta.content;
+              const now = Date.now();
+              if (now - lastUpdate > 50) {
+                const isSearch = reasoningBuffer.includes('[search]');
+                updateStreamingDOM(reasoningBuffer, contentBuffer, hasReasoning, reasoningStart, false, isSearch);
+                lastUpdate = now; scrollToBottom();
+              }
+            } catch { }
+          }
         }
       }
       const isSearch = reasoningBuffer.includes('[search]');
@@ -933,7 +977,7 @@ const ChatApp = (() => {
   function renderFileChips() {
     const row = $('file-chips');
     if (!row) return;
-    
+
     const emptyState = $('empty-state');
     if (emptyState) {
       const input = $('chat-input');
@@ -1106,6 +1150,14 @@ const ChatApp = (() => {
       btn?.setAttribute('aria-pressed', String(webSearchEnabled));
     });
 
+    // Image Gen toggle
+    $('image-gen-toggle')?.addEventListener('click', () => {
+      imageGenEnabled = !imageGenEnabled;
+      const btn = $('image-gen-toggle');
+      btn?.classList.toggle('active', imageGenEnabled);
+      btn?.setAttribute('aria-pressed', String(imageGenEnabled));
+    });
+
     input?.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -1180,13 +1232,13 @@ const ChatApp = (() => {
 
     // Reset height to measure accurate scrollHeight without losing focus or page scroll
     input.style.height = '24px';
-    
+
     // Set new height based on scrollHeight, with a reasonable max limit
     // On mobile, limit to a smaller height (e.g. 120px) to ensure the send button stays visible
     const maxHeight = window.innerWidth <= 700 ? 120 : 400;
-    const newHeight = Math.min(input.scrollHeight, maxHeight); 
+    const newHeight = Math.min(input.scrollHeight, maxHeight);
     input.style.height = newHeight + 'px';
-    
+
     // Ensure the cursor remains visible if the text exceeds the max height
     if (input.scrollHeight > newHeight) {
       input.scrollTop = input.scrollHeight;
@@ -1696,11 +1748,11 @@ const ChatApp = (() => {
     const isG = $('share-global-flag').checked;
 
     let html = '';
-    
+
     // Always show checked users first, then filtered unchecked users
     const checkedUsers = allUsers.filter(u => checkedShareUserIds.has(u.id));
     const uncheckedFiltered = allUsers.filter(u => !checkedShareUserIds.has(u.id) && (u.name.toLowerCase().includes(query) || (u.job_title && u.job_title.toLowerCase().includes(query))));
-    
+
     const displayUsers = [...checkedUsers, ...uncheckedFiltered];
 
     if (displayUsers.length === 0) {
