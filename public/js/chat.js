@@ -1232,6 +1232,13 @@ const ChatApp = (() => {
       const btn = $('web-search-toggle');
       btn?.classList.toggle('active', webSearchEnabled);
       btn?.setAttribute('aria-pressed', String(webSearchEnabled));
+
+      if (webSearchEnabled) {
+        imageGenEnabled = false;
+        const imgBtn = $('image-gen-toggle');
+        imgBtn?.classList.remove('active');
+        imgBtn?.setAttribute('aria-pressed', 'false');
+      }
     });
 
     // Image Gen toggle
@@ -1240,6 +1247,13 @@ const ChatApp = (() => {
       const btn = $('image-gen-toggle');
       btn?.classList.toggle('active', imageGenEnabled);
       btn?.setAttribute('aria-pressed', String(imageGenEnabled));
+
+      if (imageGenEnabled) {
+        webSearchEnabled = false;
+        const webBtn = $('web-search-toggle');
+        webBtn?.classList.remove('active');
+        webBtn?.setAttribute('aria-pressed', 'false');
+      }
     });
 
     // Dictation toggle
