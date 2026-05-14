@@ -18,6 +18,14 @@ const ChatApp = (() => {
   let imageGenEnabled = false;  // true when Image generation toggle is active
   let mcpEnabled = false;       // true when MCP endpoint (/v1/mcp) is active
 
+  // Dictation state
+  let dictationWebsocket = null;
+  let dictationAudioContext = null;
+  let dictationScriptProcessor = null;
+  let dictationMediaStream = null;
+  let isDictating = false;
+  const DICTATION_WS_URL = "wss://speech_to_text.npro.ai";
+
   // ── DOM Helpers ───────────────────────────────────────────────────────────
   const $ = id => document.getElementById(id);
 
@@ -1099,6 +1107,81 @@ const ChatApp = (() => {
     dropdowns.forEach(d => d.style.display = 'none');
   });
 
+  // ── Dictation ─────────────────────────────────────────────────────────────
+  function connectDictationWebSocket() {
+    dictationWebsocket = new WebSocket(DICTATION_WS_URL);
+    dictationWebsocket.onopen = () => { console.log("Dictation: Connected to Server"); };
+    dictationWebsocket.onmessage = (event) => {
+      const text = event.data;
+      const input = $('chat-input');
+      if (input) {
+        input.value += (input.value.length > 0 && !input.value.endsWith(' ') && !input.value.endsWith('\n') ? " " : "") + text;
+        adjustChatInputHeight();
+        const emptyState = $('empty-state');
+        if (emptyState) emptyState.style.display = 'none';
+      }
+    };
+    dictationWebsocket.onclose = () => { console.log("Dictation: Disconnected"); };
+    dictationWebsocket.onerror = (e) => { console.error("Dictation WebSocket Error:", e); };
+  }
+
+  async function toggleDictation() {
+    if (isDictating) {
+      stopDictation();
+    } else {
+      await startDictation();
+    }
+  }
+
+  async function startDictation() {
+    if (!dictationWebsocket || dictationWebsocket.readyState !== WebSocket.OPEN) connectDictationWebSocket();
+
+    try {
+      dictationMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      dictationAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      const source = dictationAudioContext.createMediaStreamSource(dictationMediaStream);
+      
+      dictationScriptProcessor = dictationAudioContext.createScriptProcessor(4096, 1, 1);
+      
+      source.connect(dictationScriptProcessor);
+      dictationScriptProcessor.connect(dictationAudioContext.destination);
+
+      dictationScriptProcessor.onaudioprocess = (e) => {
+        if (dictationWebsocket && dictationWebsocket.readyState === WebSocket.OPEN) {
+          const audioData = e.inputBuffer.getChannelData(0);
+          dictationWebsocket.send(audioData);
+        }
+      };
+
+      isDictating = true;
+      const btn = $('dictation-btn');
+      if (btn) {
+        btn.classList.add('active');
+        btn.style.color = '#ff3b30';
+        btn.setAttribute('aria-pressed', 'true');
+      }
+    } catch (err) {
+      console.error("Error accessing microphone:", err);
+      alert("Microphone access denied or not available.");
+    }
+  }
+
+  function stopDictation() {
+    if (dictationScriptProcessor) dictationScriptProcessor.disconnect();
+    if (dictationMediaStream) dictationMediaStream.getTracks().forEach(track => track.stop());
+    if (dictationAudioContext) dictationAudioContext.close();
+    if (dictationWebsocket) dictationWebsocket.close();
+
+    isDictating = false;
+    const btn = $('dictation-btn');
+    if (btn) {
+      btn.classList.remove('active');
+      btn.style.color = '';
+      btn.setAttribute('aria-pressed', 'false');
+    }
+  }
+
   // ── Init ──────────────────────────────────────────────────────────────────
   async function init() {
     await loadSidebar();
@@ -1111,6 +1194,7 @@ const ChatApp = (() => {
     setupSidebarClickOutside();
     initIngestionUI();
     initSystemPromptUI();
+    connectDictationWebSocket();
   }
 
   function setupChatLogListeners() {
@@ -1157,6 +1241,9 @@ const ChatApp = (() => {
       btn?.classList.toggle('active', imageGenEnabled);
       btn?.setAttribute('aria-pressed', String(imageGenEnabled));
     });
+
+    // Dictation toggle
+    $('dictation-btn')?.addEventListener('click', toggleDictation);
 
     input?.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) {
