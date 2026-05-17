@@ -421,7 +421,21 @@ const ChatApp = (() => {
         updateStreamingDOM(reasoningBuffer, contentBuffer, false, reasoningStart, true, false);
       } else {
         let requestConfig;
-        if (activeDocumentNames.size > 0) {
+        let endpoint;
+
+        if (webSearchEnabled) {
+          endpoint = '/v1/search';
+          requestConfig = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: text,
+              deep_crawl: true
+            }),
+            signal: abortController.signal,
+          };
+        } else if (activeDocumentNames.size > 0) {
+          endpoint = '/v1/rag';
           requestConfig = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -433,9 +447,7 @@ const ChatApp = (() => {
             signal: abortController.signal,
           };
         } else {
-          if (webSearchEnabled) {
-            formData.append('web_search', 'true');
-          }
+          endpoint = mcpEnabled ? '/v1/mcp' : '/v1/chat/completions';
           requestConfig = {
             method: 'POST',
             body: formData,
@@ -443,9 +455,6 @@ const ChatApp = (() => {
           };
         }
 
-        const endpoint = activeDocumentNames.size > 0
-          ? '/v1/rag'
-          : mcpEnabled ? '/v1/mcp' : '/v1/chat/completions';
         const response = await fetch(endpoint, requestConfig);
 
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -771,22 +780,34 @@ const ChatApp = (() => {
         updateStreamingDOM(reasoningBuffer, contentBuffer, false, reasoningStart, true, false);
       } else {
         let requestConfig;
-        if (activeDocumentNames.size > 0) {
-          const lastMsg = conversation[conversation.length - 1];
+        let endpoint;
+        const lastMsg = conversation[conversation.length - 1];
+
+        if (webSearchEnabled) {
+          endpoint = '/v1/search';
           requestConfig = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              query: lastMsg.content,
+              query: lastMsg ? lastMsg.content : '',
+              deep_crawl: true
+            }),
+            signal: abortController.signal,
+          };
+        } else if (activeDocumentNames.size > 0) {
+          endpoint = '/v1/rag';
+          requestConfig = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: lastMsg ? lastMsg.content : '',
               document_names: Array.from(activeDocumentNames),
               stream: true
             }),
             signal: abortController.signal,
           };
         } else {
-          if (webSearchEnabled) {
-            formData.append('web_search', 'true');
-          }
+          endpoint = mcpEnabled ? '/v1/mcp' : '/v1/chat/completions';
           requestConfig = {
             method: 'POST',
             body: formData,
@@ -794,9 +815,6 @@ const ChatApp = (() => {
           };
         }
 
-        const endpoint = activeDocumentNames.size > 0
-          ? '/v1/rag'
-          : mcpEnabled ? '/v1/mcp' : '/v1/chat/completions';
         const response = await fetch(endpoint, requestConfig);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const reader = response.body.getReader();

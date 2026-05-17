@@ -57,7 +57,7 @@ func InitRoutes() *http.ServeMux {
 
 	// OpenAI Compatible & Music Generations
 	// mux.Handle("POST /v1/music/generations", ApiAuthMiddleware(http.HandlerFunc(generateMusicHandler)))
-	mux.Handle("GET /v1/models", ApiAuthMiddleware(http.HandlerFunc(getModelsHandler)))
+	mux.Handle("GET /v1/models", http.HandlerFunc(getModelsHandler))
 	mux.Handle("POST /v1/images/generations", ApiAuthMiddleware(http.HandlerFunc(imageGenerate)))
 	mux.Handle("POST /v1/chat/completions", ApiAuthMiddleware(http.HandlerFunc(openAiChat)))
 	mux.Handle("POST /v1/messages", ApiAuthMiddleware(http.HandlerFunc(anthropicChat))) // Claude code anthropic support

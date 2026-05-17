@@ -1,37 +1,19 @@
 #!/bin/bash
 set -e
 
-# 1. Define the target workspace directory
-WORKSPACE="/home/speech/steaming_speech"
-WHISPER_DIR="$WORKSPACE/distil-large-v3.5"
-TORCH_DIR="$WORKSPACE/torch_hub"
+echo "Updating packages..."
+sudo apt-get update -y
+sudo apt-get install -y python3-venv python3-pip python3-dev ffmpeg
 
-# Create directories if they don't exist
-sudo mkdir -p "$WORKSPACE"
-sudo chown -R $USER:$USER "$WORKSPACE" # Ensure current user has read/write permissions
-mkdir -p "$WHISPER_DIR"
-mkdir -p "$TORCH_DIR"
+echo "Creating Python virtual environment..."
+python3 -m venv venv
+source venv/bin/activate
 
-# 2. Download Distil-Whisper using the new 'hf' CLI
-echo "Downloading distil-whisper-large-v3.5 to $WHISPER_DIR ..."
+echo "Installing PyTorch (Stable) with Torchaudio..."
+# Stable PyTorch relies on CUDA 12.x wheels, which are 100% compatible with CUDA 13.0 drivers
+pip3 install torch torchvision torchaudio
 
-# Notice how --exclude is passed individually for each file type
-hf download distil-whisper/distil-large-v3.5 \
-    --local-dir "$WHISPER_DIR" \
-    --exclude "*.md" \
-    --exclude "*.h5" \
-    --exclude "*.ot" \
-    --exclude "*.msgpack"
+echo "Installing Transformers, Accelerate, and WebSockets..."
+pip3 install transformers accelerate websockets numpy scipy
 
-# 3. Download Silero VAD
-echo "Pre-downloading Silero VAD to $TORCH_DIR ..."
-export TORCH_HOME="$TORCH_DIR"
-python3 -c "
-import torch
-print('Fetching Silero VAD...')
-torch.hub.load(repo_or_dir='snakers4/silero-vad', model='silero_vad', force_reload=False, trust_repo=True)
-print('Silero VAD downloaded successfully!')
-"
-
-echo "==================================================="
-echo "All models downloaded successfully to $WORKSPACE!"
+echo "Setup complete! Run 'source venv/bin/activate' to activate the environment."

@@ -39,8 +39,6 @@ import (
 	"time"
 
 	"github.com/disintegration/imaging"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -396,7 +394,6 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 	if origin == "" {
 		origin = fmt.Sprintf("%s://%s", scheme, r.Host)
 	}
-	ctx := context.WithValue(r.Context(), "baseURL", origin)
 
 	// Parse the multipart form — multer sends files + JSON fields
 	if err := r.ParseMultipartForm(MaxUploadBytes); err != nil {
@@ -404,65 +401,50 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 		r.Body = io.NopCloser(r.Body)
 	}
 
-	// Extract JSON body fields (they may be JSON string values or multipart form values)
-	var rawMessages json.RawMessage
-	var maxTokens int64 = 200000
+	// Parse the entire request body or multipart form into a generic map
+	// to preserve all upstream parameters like stream_options, temperature, etc.
+	var reqPayload map[string]any
 	var stream bool
-	var model = "qwen3.5"
-	var tools json.RawMessage
-	var webSearch bool
+	var model string
 
 	if r.MultipartForm != nil {
-		// Multipart request — values come as form fields
-		if v := r.FormValue("messages"); v != "" {
-			rawMessages = json.RawMessage(v)
-		}
-		if v := r.FormValue("stream"); v == "true" {
-			stream = true
-		}
-		if v := r.FormValue("model"); v != "" {
-			model = v
-		}
-		if v := r.FormValue("tools"); v != "" {
-			tools = json.RawMessage(v)
-		}
-		if v := r.FormValue("max_tokens"); v != "" {
-			fmt.Sscanf(v, "%d", &maxTokens)
-		}
-		if v := r.FormValue("web_search"); v == "true" {
-			webSearch = true
+		reqPayload = make(map[string]any)
+		for k, vs := range r.Form {
+			if len(vs) > 0 {
+				v := vs[0]
+				var parsed any
+				if err := json.Unmarshal([]byte(v), &parsed); err == nil {
+					reqPayload[k] = parsed
+				} else {
+					reqPayload[k] = v
+				}
+			}
 		}
 	} else {
-		var body struct {
-			Messages  json.RawMessage `json:"messages"`
-			MaxTokens int64           `json:"max_tokens"`
-			Stream    bool            `json:"stream"`
-			Model     string          `json:"model"`
-			Tools     json.RawMessage `json:"tools"`
-			WebSearch bool            `json:"web_search"`
-		}
-		body.MaxTokens = maxTokens
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.NewDecoder(r.Body).Decode(&reqPayload); err != nil {
 			http.Error(w, `{"error":"Invalid request body"}`, http.StatusBadRequest)
 			return
 		}
-		rawMessages = body.Messages
-		if body.MaxTokens > 0 {
-			maxTokens = body.MaxTokens
-		}
-		stream = body.Stream
-		if body.Model != "" {
-			model = body.Model
-		}
-		tools = body.Tools
-		webSearch = body.WebSearch
 	}
 
-	// messages is a []map[string]any so we preserve arbitrary openai-format structures
+	if s, ok := reqPayload["stream"].(bool); ok {
+		stream = s
+	} else if sStr, ok := reqPayload["stream"].(string); ok && sStr == "true" {
+		stream = true
+		reqPayload["stream"] = true
+	}
+
+	if m, ok := reqPayload["model"].(string); ok {
+		model = m
+	} else {
+		model = "qwen3.5"
+	}
+
+	// Extract messages as []map[string]any so we can inject attachments
 	var messages []map[string]any
-	if err := json.Unmarshal(rawMessages, &messages); err != nil {
-		http.Error(w, `{"error":"Invalid messages format"}`, http.StatusBadRequest)
-		return
+	if msgsRaw, ok := reqPayload["messages"]; ok {
+		msgsJSON, _ := json.Marshal(msgsRaw)
+		json.Unmarshal(msgsJSON, &messages)
 	}
 
 	// Process file attachments and inject them into the last user message
@@ -531,69 +513,96 @@ func openAiChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	headersWritten := false
-	writeHeadersOnce := func() {
-		if !headersWritten && stream {
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.Header().Set("Cache-Control", "no-cache")
-			w.Header().Set("Connection", "keep-alive")
-			if origin := r.Header.Get("Origin"); origin != "" {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-			} else {
-				w.Header().Set("Access-Control-Allow-Origin", "*")
-			}
-			headersWritten = true
+	// Update the payload with potentially modified messages
+	reqPayload["messages"] = messages
+
+	if _, ok := reqPayload["max_tokens"]; !ok {
+		reqPayload["max_tokens"] = 200000
+	}
+
+	// Diagnostic: log payload size before calling the LLM.
+	messagesJSON, _ := json.Marshal(messages)
+	estimatedPayloadBytes := len(messagesJSON)
+	log.Printf("[chat] → LLM request: model=%s stream=%v messages=%d estimatedPayloadBytes=%d",
+		model, stream, len(messages), estimatedPayloadBytes)
+
+	reqBody, err := json.Marshal(reqPayload)
+	if err != nil {
+		http.Error(w, `{"error":"Failed to marshal request"}`, http.StatusInternalServerError)
+		return
+	}
+
+	baseURL := os.Getenv("MAIN_GPU_URL")
+	if !strings.HasSuffix(baseURL, "/") {
+		baseURL += "/"
+	}
+	targetURL := baseURL + "chat/completions"
+
+	httpReq, err := http.NewRequestWithContext(r.Context(), "POST", targetURL, bytes.NewBuffer(reqBody))
+	if err != nil {
+		http.Error(w, `{"error":"Failed to create upstream request"}`, http.StatusInternalServerError)
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	client := &http.Client{
+		Transport: &rawBodyLogTransport{base: http.DefaultTransport},
+	}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		log.Printf("[chat] Upstream error: %v", err)
+		http.Error(w, `{"error":"Upstream connection failed"}`, http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy headers from upstream response, skipping CORS so we can set it ourselves
+	for k, vv := range resp.Header {
+		if strings.ToLower(k) == "access-control-allow-origin" {
+			continue
+		}
+		for _, v := range vv {
+			w.Header().Add(k, v)
 		}
 	}
 
-	// Re-encode messages as JSON to build openai params
-	messagesJSON, _ := json.Marshal(messages)
+	// Always set CORS headers
+	if origin := r.Header.Get("Origin"); origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+	} else {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	}
 
-	// Diagnostic: log payload size before calling the LLM.
-	// A large codebase can silently exceed the context window — this makes it visible.
-	estimatedPayloadBytes := len(messagesJSON)
-	log.Printf("[chat] → LLM request: model=%s stream=%v messages=%d estimatedPayloadBytes=%d maxTokens=%d",
-		model, stream, len(messages), estimatedPayloadBytes, maxTokens)
-
-	// Build openai messages — since messages are arbitrary maps, we pass them raw
-	// by marshaling into openai.ChatCompletionMessageParamUnion via JSON round-trip
-	var openaiMessages []openai.ChatCompletionMessageParamUnion
-	json.Unmarshal(messagesJSON, &openaiMessages)
-
-	llmClient := openai.NewClient(
-		option.WithBaseURL(os.Getenv("MAIN_GPU_URL")),
-		option.WithAPIKey(os.Getenv("OPENAI_API_KEY")),
-		// rawBodyLogTransport logs any non-SSE response body (e.g. JSON error
-		// objects returned by llama_cpp on context-length exceeded).
-		option.WithHTTPClient(&http.Client{
-			Transport: &rawBodyLogTransport{base: http.DefaultTransport},
-		}),
-	)
-
-	
-	// Delegate tool extraction and merging to mcp.go
-	mergedTools := MergeTools(tools, webSearch)
-
-	var flusher http.Flusher
 	if stream {
-		writeHeadersOnce()
-		flusher, _ = w.(http.Flusher)
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", "text/event-stream")
+		}
 	}
 
-	p := AgentParams{
-		Messages:              openaiMessages,
-		Model:                 model,
-		MaxTokens:             maxTokens,
-		Stream:                stream,
-		ResponseWriter:        w,
-		Flusher:               flusher,
-		EstimatedPayloadBytes: estimatedPayloadBytes,
-		Tools:                 mergedTools,
-		Client:                &llmClient,
-		RequestCtx:            r.Context(),
-	}
+	w.WriteHeader(resp.StatusCode)
 
-	RunAgentLoop(ctx, p)
+	flusher, canFlush := w.(http.Flusher)
+	buf := make([]byte, 4096)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			w.Write(buf[:n])
+			if canFlush {
+				flusher.Flush()
+			}
+		}
+		if err != nil {
+			if err != io.EOF {
+				log.Printf("[chat] Error reading upstream response: %v", err)
+			}
+			break
+		}
+	}
 }
 
 func fetchAnthropicURLImage(imageURL string) (string, error) {
@@ -1017,7 +1026,7 @@ func getModelsHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 	}
-	
+
 	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
