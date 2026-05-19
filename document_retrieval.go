@@ -347,7 +347,7 @@ func rerankChunks(userQuery string, fusedChunks []RAGChunk, topN int) []RAGChunk
 		TopN:      topN,
 	})
 
-	httpClient := &http.Client{Timeout: 15 * time.Second}
+	httpClient := &http.Client{Timeout: 40 * time.Second}
 	resp, err := httpClient.Post(
 		os.Getenv("RERANKER_URL"),
 		"application/json",
