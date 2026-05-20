@@ -68,7 +68,7 @@ const ChatApp = (() => {
            onclick="ChatApp.switchConversation(${c.id})"
            onkeydown="if(event.key==='Enter') ChatApp.switchConversation(${c.id})">
         <span class="conv-title" style="color: whitesmoke;">${escapeHtml(c.title)}</span>
-        <button class="conv-delete" title="Delete" 
+        <button class="conv-delete" data-tooltip="Delete conversation" data-tooltip-position="left" 
                 onclick="event.stopPropagation(); ChatApp.deleteConversation(${c.id})" 
                 aria-label="Delete conversation">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
@@ -1097,7 +1097,7 @@ const ChatApp = (() => {
           <div class="user-email">${escapeHtml(user.email || '')}</div>
         </div>
         <div class="user-menu-container" style="position: relative; margin-left: auto;">
-          <button class="user-menu-btn" title="Menu" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 6px; border-radius: 6px; display: flex; align-items: center; justify-content: center;" onclick="event.stopPropagation(); const ds = this.nextElementSibling.style; ds.display = (ds.display === 'none' ? 'block' : 'none');">
+          <button class="user-menu-btn" data-tooltip="Menu" data-tooltip-position="left" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 6px; border-radius: 6px; display: flex; align-items: center; justify-content: center;" onclick="event.stopPropagation(); const ds = this.nextElementSibling.style; ds.display = (ds.display === 'none' ? 'block' : 'none');">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="1"></circle>
               <circle cx="12" cy="5" r="1"></circle>
@@ -1156,12 +1156,12 @@ const ChatApp = (() => {
 
     try {
       dictationMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
+
       dictationAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
       const source = dictationAudioContext.createMediaStreamSource(dictationMediaStream);
-      
+
       dictationScriptProcessor = dictationAudioContext.createScriptProcessor(4096, 1, 1);
-      
+
       source.connect(dictationScriptProcessor);
       dictationScriptProcessor.connect(dictationAudioContext.destination);
 
@@ -1231,7 +1231,7 @@ const ChatApp = (() => {
     initIngestionUI();
     initSystemPromptUI();
     connectDictationWebSocket();
-    
+
     // Sync initial states for mini navigation
     syncMiniNavStates();
   }
@@ -1838,7 +1838,7 @@ const ChatApp = (() => {
                 Share
               </button>
             ` : `
-              <div style="margin-right: auto; font-size: 11px; color: var(--text-muted); font-style: italic;">
+              <div style="margin-right: auto; font-size: 11px; font-style: italic;">
                 Shared Workspace
               </div>
             `}
