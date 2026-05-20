@@ -1200,8 +1200,26 @@ const ChatApp = (() => {
     }
   }
 
+  function syncMiniNavStates() {
+    const miniImgBtn = $('mini-image-btn');
+    if (miniImgBtn) {
+      miniImgBtn.classList.toggle('accent-active', !!imageGenEnabled);
+    }
+    const miniFolderBtn = $('mini-folder-btn');
+    const rightSidebar = $('right-sidebar');
+    if (miniFolderBtn && rightSidebar) {
+      miniFolderBtn.classList.toggle('active', rightSidebar.classList.contains('open'));
+    }
+  }
+
   // ── Init ──────────────────────────────────────────────────────────────────
   async function init() {
+    // Apply saved desktop sidebar state
+    const isCollapsed = localStorage.getItem('sidebar-collapsed') === 'true';
+    if (isCollapsed) {
+      document.querySelector('.sidebar')?.classList.add('collapsed');
+    }
+
     await loadSidebar();
     await loadUserProfile();
     renderEmptyState();
@@ -1213,6 +1231,9 @@ const ChatApp = (() => {
     initIngestionUI();
     initSystemPromptUI();
     connectDictationWebSocket();
+    
+    // Sync initial states for mini navigation
+    syncMiniNavStates();
   }
 
   function setupChatLogListeners() {
@@ -1272,6 +1293,7 @@ const ChatApp = (() => {
         webBtn?.classList.remove('active');
         webBtn?.setAttribute('aria-pressed', 'false');
       }
+      syncMiniNavStates();
     });
 
     // Dictation toggle
@@ -1343,6 +1365,53 @@ const ChatApp = (() => {
     $('left-sidebar-close')?.addEventListener('click', () => {
       document.querySelector('.sidebar')?.classList.remove('open');
     });
+
+    // Desktop collapsible sidebar event listeners
+    $('sidebar-collapse-btn')?.addEventListener('click', () => {
+      const sidebar = document.querySelector('.sidebar');
+      if (sidebar) {
+        sidebar.classList.add('collapsed');
+        localStorage.setItem('sidebar-collapsed', 'true');
+      }
+    });
+
+    $('sidebar-mini-expand-btn')?.addEventListener('click', () => {
+      const sidebar = document.querySelector('.sidebar');
+      if (sidebar) {
+        sidebar.classList.remove('collapsed');
+        localStorage.setItem('sidebar-collapsed', 'false');
+      }
+    });
+
+    // Mini Navigation quick-action buttons
+    $('mini-new-chat-btn')?.addEventListener('click', () => {
+      newConversation();
+    });
+
+    $('mini-image-btn')?.addEventListener('click', () => {
+      $('image-gen-toggle')?.click();
+    });
+
+    $('mini-folder-btn')?.addEventListener('click', () => {
+      $('right-sidebar-toggle')?.click();
+    });
+
+    $('mini-history-btn')?.addEventListener('click', () => {
+      const sidebar = document.querySelector('.sidebar');
+      if (sidebar) {
+        sidebar.classList.remove('collapsed');
+        localStorage.setItem('sidebar-collapsed', 'false');
+      }
+    });
+
+    $('mini-search-btn')?.addEventListener('click', () => {
+      const sidebar = document.querySelector('.sidebar');
+      if (sidebar) {
+        sidebar.classList.remove('collapsed');
+        localStorage.setItem('sidebar-collapsed', 'false');
+      }
+      $('chat-input')?.focus();
+    });
   }
 
   function adjustChatInputHeight() {
@@ -1398,10 +1467,16 @@ const ChatApp = (() => {
       if (window.innerWidth > 700) {
         rightSidebar.classList.add('open');
       }
-      toggleBtn.addEventListener('click', () => rightSidebar.classList.toggle('open'));
+      toggleBtn.addEventListener('click', () => {
+        rightSidebar.classList.toggle('open');
+        syncMiniNavStates();
+      });
     }
     if (closeBtn && rightSidebar) {
-      closeBtn.addEventListener('click', () => rightSidebar.classList.remove('open'));
+      closeBtn.addEventListener('click', () => {
+        rightSidebar.classList.remove('open');
+        syncMiniNavStates();
+      });
     }
 
     loadDocuments();
