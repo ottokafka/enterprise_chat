@@ -134,16 +134,6 @@ const ChatApp = (() => {
         previewBtn.className = 'msg-edit-btn';
         previewBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg> Preview`;
         previewBtn.title = "Preview HTML";
-        previewBtn.style.background = '#2d2d2d';
-        previewBtn.style.color = '#e0e0e0';
-        previewBtn.style.border = '1px solid #444';
-        previewBtn.style.borderRadius = '4px';
-        previewBtn.style.padding = '4px 8px';
-        previewBtn.style.cursor = 'pointer';
-        previewBtn.style.display = 'flex';
-        previewBtn.style.alignItems = 'center';
-        previewBtn.style.gap = '4px';
-        previewBtn.style.fontSize = '12px';
         previewBtn.onclick = () => {
           const form = document.createElement('form');
           form.method = 'POST';
@@ -165,21 +155,15 @@ const ChatApp = (() => {
       copyBtn.className = 'msg-edit-btn';
       copyBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy`;
       copyBtn.title = "Copy Code";
-      copyBtn.style.background = '#2d2d2d';
-      copyBtn.style.color = '#e0e0e0';
-      copyBtn.style.border = '1px solid #444';
-      copyBtn.style.borderRadius = '4px';
-      copyBtn.style.padding = '4px 8px';
-      copyBtn.style.cursor = 'pointer';
-      copyBtn.style.display = 'flex';
-      copyBtn.style.alignItems = 'center';
-      copyBtn.style.gap = '4px';
-      copyBtn.style.fontSize = '12px';
       copyBtn.onclick = () => {
         navigator.clipboard.writeText(codeEl.textContent);
+        copyBtn.classList.add('copied');
         const originalHtml = copyBtn.innerHTML;
         copyBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> Copied!`;
-        setTimeout(() => copyBtn.innerHTML = originalHtml, 2000);
+        setTimeout(() => {
+          copyBtn.classList.remove('copied');
+          copyBtn.innerHTML = originalHtml;
+        }, 2000);
       };
       btnContainer.appendChild(copyBtn);
 
