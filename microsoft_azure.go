@@ -187,6 +187,9 @@ func AuthStatusHandler(w http.ResponseWriter, r *http.Request) {
             <h2 class="title">Sign in to Dashboard</h2>
             <div class="subtitle">Access your personalized secure portal.</div>
             <a href="/login" class="btn-ms">Sign in with Microsoft</a>
+            <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #E5E7EB; text-align: center;">
+                <a href="/admin/login" style="color: #9CA3AF; font-size: 12px; text-decoration: none; transition: color 0.15s;" onmouseover="this.style.color='#6366F1'" onmouseout="this.style.color='#9CA3AF'">Admin Login</a>
+            </div>
         </div>
     `))
 }
@@ -201,10 +204,13 @@ func GetUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isAdmin, _ := session.Values["isAdmin"].(bool)
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"name":  name,
-		"email": email,
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"name":     name,
+		"email":    email,
+		"is_admin": isAdmin,
 	})
 }
 

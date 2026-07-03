@@ -118,6 +118,13 @@ func InitRoutes() *http.ServeMux {
 	mux.Handle("GET /api/user", CheckAuthMiddleware(http.HandlerFunc(GetUserHandler)))
 	mux.Handle("GET /api/users", CheckAuthMiddleware(http.HandlerFunc(GetAllUsersHandler)))
 
+	// Admin Legacy Login (username/password)
+	mux.HandleFunc("GET /admin/login", AdminLoginPageHandler)
+	mux.HandleFunc("POST /admin/login", AdminLoginHandler)
+
+	// Admin Panel — usage reports (requires isAdmin session flag)
+	mux.Handle("GET /admin", CheckAdminMiddleware(http.HandlerFunc(AdminPanelHandler)))
+
 	// Map images static directory
 	mux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir("./images"))))
 

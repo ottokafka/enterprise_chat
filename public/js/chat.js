@@ -1073,6 +1073,11 @@ const ChatApp = (() => {
     const footer = $('sidebar-footer');
     if (!footer) return;
     const initial = (user.name || 'U').charAt(0).toUpperCase();
+    const adminLink = user.is_admin ? `
+            <a href="/admin" id="admin-panel-btn" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; color: var(--text-primary); text-decoration: none; font-size: 13px; border-radius: 6px; transition: background 0.15s;" onmouseover="this.style.background='var(--bg-hover)'" onmouseout="this.style.background='transparent'">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Admin Panel
+            </a>` : '';
     footer.innerHTML = `
       <div class="user-profile">
         <div class="avatar-circle">${initial}</div>
@@ -1093,6 +1098,7 @@ const ChatApp = (() => {
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
               Developer
             </a>
+            ${adminLink}
             <a href="/logout" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; color: #ef4444; text-decoration: none; font-size: 13px; border-radius: 6px; transition: background 0.15s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.15)'" onmouseout="this.style.background='transparent'">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
               Sign Out
