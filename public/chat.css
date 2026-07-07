@@ -593,6 +593,10 @@ body {
     overflow-wrap: break-word;
 }
 
+.user-bubble .msg-content {
+    white-space: pre-wrap;
+}
+
 .assistant-bubble {
     background: var(--bg-card);
     border: 1px solid var(--border);
