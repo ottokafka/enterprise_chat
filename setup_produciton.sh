@@ -7,6 +7,13 @@ CURRENT_USER="$(whoami)"
 EXECUTABLE_PATH="${WORKING_DIR}/${SERVICE_NAME}"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
+# Install system dependencies for PDF/HEIC processing
+if command -v apt-get >/dev/null 2>&1; then
+  echo "Installing ImageMagick and Ghostscript..."
+  sudo apt-get update
+  sudo apt-get install -y imagemagick ghostscript
+fi
+
 # Ensure the binary exists
 if [ ! -f "$EXECUTABLE_PATH" ]; then
   echo "Error: The binary '$EXECUTABLE_PATH' does not exist."
@@ -28,6 +35,7 @@ Restart=on-failure
 User=$CURRENT_USER
 WorkingDirectory=$WORKING_DIR
 Environment=GIN_MODE=release
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 LimitNOFILE=65536
 
 [Install]

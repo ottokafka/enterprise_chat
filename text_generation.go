@@ -11,7 +11,7 @@ package main
 //   sharp       → github.com/disintegration/imaging  (pure Go, no CGO)
 //   heic-convert → NOTE: No pure-Go HEIC decoder is available without CGO.
 //                  We use ImageMagick convert (same as pdf2pic approach) as a fallback.
-//   pdf2pic     → os/exec + ImageMagick convert
+//   pdf2pic     → dslipak/pdf + pdfcpu (primary), ImageMagick convert (fallback)
 //   xlsx        → archive/zip + encoding/xml for CSV export
 //   mammoth     → archive/zip + encoding/xml (same approach as document_ingestion.go)
 
@@ -35,10 +35,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/disintegration/imaging"
+	"github.com/dslipak/pdf"
+	"github.com/pdfcpu/pdfcpu/pkg/api"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -132,7 +135,11 @@ func convertHEIC(data []byte) ([]byte, error) {
 	defer os.Remove(tmpOut.Name())
 	tmpOut.Close()
 
-	cmd := exec.Command("convert", tmpIn.Name(), tmpOut.Name())
+	convertPath, err := resolveConvertBinary()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(convertPath, tmpIn.Name(), tmpOut.Name())
 	if out, err := cmd.CombinedOutput(); err != nil {
 		fmt.Println("[Warning] heic failed ot convert to jpg")
 		return nil, fmt.Errorf("ImageMagick heic convert error: %v — %s", err, out)
@@ -142,10 +149,14 @@ func convertHEIC(data []byte) ([]byte, error) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PDF → PNG pages via ImageMagick convert (same approach as document_ingestion.go)
+// PDF → PNG pages via ImageMagick convert (fallback for scanned/image-only PDFs)
 // ─────────────────────────────────────────────────────────────────────────────
 
 func pdfToImages(data []byte, maxPages int) ([][]byte, error) {
+	convertPath, err := resolveConvertBinary()
+	if err != nil {
+		return nil, err
+	}
 	tmpPDF, err := os.CreateTemp("", "chat-*.pdf")
 	if err != nil {
 		return nil, err
@@ -160,13 +171,25 @@ func pdfToImages(data []byte, maxPages int) ([][]byte, error) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	outPattern := filepath.Join(tmpDir, "page-%04d.png")
-	cmd := exec.Command("convert", "-density", "100", "-resize", "1200x", tmpPDF.Name(), outPattern)
+	// PDFs with alpha/transparency render as near-black images without a white
+	// background — vision models then report the document as empty.
+	outPattern := filepath.Join(tmpDir, "page-%04d.jpg")
+	cmd := exec.Command(
+		convertPath,
+		"-density", "150",
+		"-background", "white",
+		"-alpha", "remove",
+		"-resize", "1200x",
+		"-quality", "90",
+		tmpPDF.Name(),
+		outPattern,
+	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("ImageMagick PDF error: %v — %s", err, out)
 	}
 
-	entries, _ := filepath.Glob(filepath.Join(tmpDir, "page-*.png"))
+	entries, _ := filepath.Glob(filepath.Join(tmpDir, "page-*.jpg"))
+	sort.Strings(entries)
 	if len(entries) > maxPages {
 		entries = entries[:maxPages]
 	}
@@ -174,11 +197,123 @@ func pdfToImages(data []byte, maxPages int) ([][]byte, error) {
 	var pages [][]byte
 	for _, e := range entries {
 		b, err := os.ReadFile(e)
-		if err == nil {
+		if err == nil && len(b) > 0 {
 			pages = append(pages, b)
 		}
 	}
+	if len(pages) == 0 {
+		return nil, fmt.Errorf("ImageMagick produced no page images")
+	}
 	return pages, nil
+}
+
+// pdfToContent extracts text and embedded images using pure-Go libraries, matching
+// the approach in document_ingestion.go. Used when ImageMagick is unavailable.
+func pdfToContent(data []byte, maxPages int) ([]processedFile, error) {
+	tmpPDF, err := os.CreateTemp("", "chat-*.pdf")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(tmpPDF.Name())
+	if _, err := tmpPDF.Write(data); err != nil {
+		return nil, err
+	}
+	tmpPDF.Close()
+
+	imgDir, err := os.MkdirTemp("", "chat-pdf-img-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(imgDir)
+
+	if err := api.ExtractImagesFile(tmpPDF.Name(), imgDir, nil, nil); err != nil {
+		log.Printf("[file] PDF image extraction warning: %v\n", err)
+	}
+
+	contentReader, err := pdf.Open(tmpPDF.Name())
+	if err != nil {
+		return nil, fmt.Errorf("failed to open pdf: %w", err)
+	}
+
+	numPages := contentReader.NumPage()
+	if numPages > maxPages {
+		numPages = maxPages
+	}
+
+	var results []processedFile
+	for i := 1; i <= numPages; i++ {
+		page := contentReader.Page(i)
+		text, _ := page.GetPlainText(nil)
+		text = strings.TrimSpace(text)
+		if text != "" {
+			results = append(results, processedFile{
+				fileType: "text",
+				text:     fmt.Sprintf("--- Page %d ---\n%s", i, text),
+			})
+		}
+
+		for _, pattern := range []string{
+			filepath.Join(imgDir, fmt.Sprintf("page_%d_*.png", i)),
+			filepath.Join(imgDir, fmt.Sprintf("page_%d_*.jpg", i)),
+		} {
+			imgFiles, _ := filepath.Glob(pattern)
+			for _, imgPath := range imgFiles {
+				imgData, err := os.ReadFile(imgPath)
+				if err != nil {
+					continue
+				}
+				mime := "image/png"
+				if strings.HasSuffix(strings.ToLower(imgPath), ".jpg") || strings.HasSuffix(strings.ToLower(imgPath), ".jpeg") {
+					mime = "image/jpeg"
+				}
+				results = append(results, processedFile{
+					fileType: "image",
+					data:     imgData,
+					mime:     mime,
+				})
+			}
+		}
+	}
+
+	if len(results) == 0 {
+		return nil, fmt.Errorf("no text or embedded images found in PDF")
+	}
+	return results, nil
+}
+
+func processPdfAttachment(data []byte, maxPages int) ([]processedFile, error) {
+	textResults, textErr := pdfToContent(data, maxPages)
+	hasText := textErr == nil && len(textResults) > 0
+
+	pages, imgErr := pdfToImages(data, maxPages)
+	if imgErr == nil && len(pages) > 0 {
+		var results []processedFile
+		if hasText {
+			results = append(results, textResults...)
+		}
+		for _, p := range pages {
+			results = append(results, processedFile{
+				fileType: "image",
+				data:     p,
+				mime:     "image/jpeg",
+			})
+		}
+		log.Printf("[file] PDF rasterized %d page(s), text_parts=%d\n", len(pages), len(textResults))
+		return results, nil
+	}
+
+	if hasText {
+		log.Printf("[file] PDF text-only extraction: %d part(s); rasterize error: %v\n", len(textResults), imgErr)
+		return textResults, nil
+	}
+
+	if imgErr != nil {
+		return nil, imgErr
+	}
+	if textErr != nil {
+		return nil, textErr
+	}
+	return nil, fmt.Errorf("no content extracted from PDF")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -288,14 +423,10 @@ func processIncomingFile(filename, contentType string, data []byte) ([]processed
 		return []processedFile{{fileType: "image", data: jpgData, mime: "image/jpeg"}}, nil
 
 	case "application/pdf":
-		pages, err := pdfToImages(data, 9999) // Lifted from 50
+		result, err := processPdfAttachment(data, 9999)
 		if err != nil {
 			log.Printf("[file] PDF conversion error: %v\n", err)
 			return []processedFile{{fileType: "text", text: "Failed to read PDF pages."}}, nil
-		}
-		result := make([]processedFile, len(pages))
-		for i, p := range pages {
-			result[i] = processedFile{fileType: "image", data: p, mime: "image/png"}
 		}
 		return result, nil
 
