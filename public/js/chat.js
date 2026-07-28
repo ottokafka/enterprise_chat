@@ -26,6 +26,13 @@ const ChatApp = (() => {
   let isDictating = false;
   const DICTATION_WS_URL = "wss://speech_to_text.npro.ai";
 
+  // Font size state
+  const FONT_SIZE_MIN = 12;
+  const FONT_SIZE_MAX = 28;
+  const FONT_SIZE_STEP = 0.5;
+  const FONT_SIZE_DEFAULT = 14.5;
+  const FONT_SIZE_STORAGE_KEY = 'chat-font-size';
+
   // ── DOM Helpers ───────────────────────────────────────────────────────────
   const $ = id => document.getElementById(id);
 
@@ -1224,6 +1231,9 @@ const ChatApp = (() => {
 
     // Sync initial states for mini navigation
     syncMiniNavStates();
+
+    // Apply saved font size
+    applyFontSize(getFontSize());
   }
 
   function setupChatLogListeners() {
@@ -2158,6 +2168,33 @@ const ChatApp = (() => {
     }
   }
 
+  // ── Font Size ─────────────────────────────────────────────────────────────
+  function getFontSize() {
+    const stored = localStorage.getItem(FONT_SIZE_STORAGE_KEY);
+    if (stored !== null) {
+      const parsed = parseFloat(stored);
+      if (!isNaN(parsed)) return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, parsed));
+    }
+    return FONT_SIZE_DEFAULT;
+  }
+
+  function applyFontSize(size) {
+    document.documentElement.style.setProperty('--chat-font-size', size + 'px');
+    const label = $('font-size-value');
+    if (label) label.textContent = size;
+    const minusBtn = $('font-size-minus');
+    const plusBtn = $('font-size-plus');
+    if (minusBtn) minusBtn.disabled = size <= FONT_SIZE_MIN;
+    if (plusBtn) plusBtn.disabled = size >= FONT_SIZE_MAX;
+    localStorage.setItem(FONT_SIZE_STORAGE_KEY, size);
+  }
+
+  function changeFontSize(delta) {
+    const current = getFontSize();
+    const next = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, current + delta));
+    if (next !== current) applyFontSize(next);
+  }
+
   return {
     init,
     deleteDocument,
@@ -2188,6 +2225,9 @@ const ChatApp = (() => {
     toggleMCP,
     callMCPTool,
     testMCPCalculator,
+    // Font size
+    increaseFontSize: () => changeFontSize(FONT_SIZE_STEP),
+    decreaseFontSize: () => changeFontSize(-FONT_SIZE_STEP),
   };
 })();
 

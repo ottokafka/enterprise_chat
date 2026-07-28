@@ -175,6 +175,13 @@
         </button>
         <span class="topbar-title">Chat</span>
         <div style="flex:1;"></div>
+        <div class="font-size-control">
+          <button class="font-size-btn" id="font-size-minus" aria-label="Decrease font size"
+            onclick="ChatApp.decreaseFontSize()" title="Smaller text">−</button>
+          <span class="font-size-value" id="font-size-value">14.5</span>
+          <button class="font-size-btn" id="font-size-plus" aria-label="Increase font size"
+            onclick="ChatApp.increaseFontSize()" title="Larger text">+</button>
+        </div>
         <button class="right-sidebar-toggle" id="right-sidebar-toggle" aria-label="Toggle documents"
           style="background: transparent; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px;">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">

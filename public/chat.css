@@ -24,6 +24,7 @@
     --accent-hover: #4f52e0;
     --user-bubble: #1e1e2e;
     --user-border: #3b3b5c;
+    --chat-font-size: 14.5px;
     --font: 'Inter', system-ui, sans-serif;
     --radius-sm: 8px;
     --radius-md: 14px;
@@ -481,6 +482,51 @@ body {
     letter-spacing: -0.2px;
 }
 
+/* ── Font Size Controls ──────────────── */
+.font-size-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.font-size-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: 1px solid var(--border-mid);
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    font-size: 16px;
+    font-family: var(--font);
+    font-weight: 500;
+    line-height: 1;
+    transition: all var(--transition);
+}
+
+.font-size-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+}
+
+.font-size-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.font-size-value {
+    font-size: 12px;
+    color: var(--text-muted);
+    min-width: 36px;
+    text-align: center;
+    user-select: none;
+}
+
 /* ── Chat Log ─────────────────────────── */
 #chat-log {
     flex: 1;
@@ -578,7 +624,7 @@ body {
 .msg-bubble {
     padding: 12px 18px;
     border-radius: var(--radius-md);
-    font-size: 14.5px;
+    font-size: var(--chat-font-size);
     line-height: 1.65;
     word-break: break-word;
     overflow-wrap: break-word;
@@ -611,7 +657,7 @@ body {
 
 /* ── Markdown body ────────────────────── */
 .markdown-body {
-    font-size: 14.5px;
+    font-size: var(--chat-font-size);
     color: var(--text-primary);
     word-break: break-word;
     overflow-wrap: break-word;
@@ -1721,6 +1767,16 @@ input:checked+.slider:before {
 
     #chat-input {
         max-height: 120px !important;
+    }
+
+    .font-size-value {
+        display: none;
+    }
+
+    .font-size-btn {
+        width: 26px;
+        height: 26px;
+        font-size: 15px;
     }
 }
 
